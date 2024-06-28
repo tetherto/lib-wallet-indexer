@@ -1,0 +1,19 @@
+{
+  "name": "lib-wallet-indexer-eth",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "brittle ./test/*.test.js"
+  },
+  "author": "rbndg",
+  "license": "MIT",
+  "dependencies": {
+    "fastify": "^4.28.0",
+    "node-fetch": "^2.7.0",
+    "web3": "^4.10.0"
+  },
+  "devDependencies": {
+    "brittle": "^3.5.2"
+  }
+}
