@@ -1,5 +1,7 @@
+const { EventEmitter } = require('events')
+const { randomBytes } = require('crypto')
 const fastify = require("fastify")
-
+const { WebSocketServer }  = require('ws')
 
 const rpcSchema = {
   "$id": "jsonrpc",
@@ -30,6 +32,71 @@ const rpcErrors = {
   notfound  : {"code": -32601, "message": "Method not found"} 
 }
 
+
+class Websocket extends EventEmitter {
+
+  constructor(config){
+    super()
+    this.port =  config.port || 8181
+    this.ws = new WebSocketServer({
+      port:this.port,
+    });
+
+    this.ws.on('connection',(ws) =>  {
+      ws.on('error', console.error);
+
+      const cid = randomBytes(16).toString('hex')
+      ws.on('message', (data) =>  {
+        const rpc = this._parseMsg(ws, data, cid)
+        if(rpc.error) return ws.send({ error: 'bad request forma'})
+        this._processMsg(ws,rpc,cid)
+      });
+
+      ws.on('close', () => {
+        this.emit('ws-close',{ cid })
+      })
+    });
+  }
+
+  _processMsg(ws, rpc) {
+
+    this.emit(`ws-${rpc.method}`, {
+      method: rpc.method,
+      params:rpc.params,
+      cid: rpc.cid,
+      send: (evname, data) =>  {
+        ws.send(JSON.stringify({
+          error: false,
+          event: evname || 'unk',
+          data
+        }))
+      },
+      error: (error) => {
+        ws.send(JSON.stringify({ error, }))
+      }
+    })
+
+  }
+
+  _parseMsg(ws, data, cid) {
+
+    let res 
+
+    try {
+      res = JSON.parse(data.toString())
+    } catch(err) {
+      return { error: 'bad request format' }
+    }
+
+    return {
+      ws,
+      method : res.method,
+      params: res.params,
+      cid 
+    }
+  }
+}
+
 class ProxyServer {
   constructor(config = {}) {
     this.port = config.port || 8008
@@ -39,6 +106,24 @@ class ProxyServer {
 
     this._rpcSchema = rpcSchema
     this._handlers = new Map()
+    this._setupWs(config)
+  }
+
+  _setupWs(config) {
+    this.ws = new Websocket({
+      port : config.wsport,
+    })
+    const methods = [this._wsSubscribeAccount]
+    if(methods.indexOf(undefined) !== -1 ) throw new Error('Not all websocket methods have been  implemented')
+    this.ws.on('ws-subscribeAccount',(req) =>{
+      this._wsSubscribeAccount(req)
+    })
+    this.ws.on('ws-close', (cid) => {
+      this._wsCloseCid(cid)
+    })
+
+    console.log(`Listening websocket port: ${this.ws.port}`)
+
   }
 
   start() {

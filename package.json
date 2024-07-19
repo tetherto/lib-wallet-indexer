@@ -11,7 +11,8 @@
   "dependencies": {
     "fastify": "^4.28.0",
     "node-fetch": "^2.7.0",
-    "web3": "^4.10.0"
+    "web3": "^4.10.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "brittle": "^3.5.2"
