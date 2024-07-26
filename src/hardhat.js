@@ -9,6 +9,8 @@ const EVENTS = {
   SUB_ACCOUNT : "subscribeAccount"
 }
 
+const TOPIC_SIG = Web3.utils.sha3('Transfer(address,address,uint256)');
+
 
 class Hardhat extends BaseServer {
 
@@ -19,6 +21,7 @@ class Hardhat extends BaseServer {
       number : FMT_NUMBER.NUMBER,
     }
     this._subs = new Map()
+    this._contractLogSubs = []
     this._MAX_SUB_SIZE = 10000
   }
 
@@ -51,7 +54,7 @@ class Hardhat extends BaseServer {
     }
     const response = await fetch(`${config.uri}${path}${qs}`, {
       method : 'get',
-      headers: {'Content-Type': 'application/json'},fsdf    });
+      headers: {'Content-Type': 'application/json'}, });
     return response.json();
   }
 
@@ -85,13 +88,76 @@ class Hardhat extends BaseServer {
     const web3 = this.web3
     const blockSub = await web3.eth.subscribe('newHeads');
     blockSub.on('data', async blockhead => {
-      const ev = this._getEventSubs(EVENTS.SUB_ACCOUNT)
+      const filter = this._getEventSubs(EVENTS.SUB_ACCOUNT)
       for(const id of blockhead.transactions) {
-        this._filterBlockTx(id, ev, EVENTS.SUB_ACCOUNT)
+        this._filterBlockTx(id, filter)
       }
     });
     blockSub.on('error', error =>
       console.log('Error when subscribing to New block header: ', error),
+    );
+  }
+
+  _subscribeToLogs(contracts) {
+
+    contracts.forEach((addr) => {
+      if(this._contractLogSubs.includes(addr)) return
+      this._subToContract(addr)
+    })
+
+  }
+
+  async _subToContract(contract) {
+    const web3 = this.web3
+    contract = contract.toLowerCase()
+    const sub = await web3.eth.subscribe('logs', { 
+      address: contract, 
+      topics:[TOPIC_SIG]
+    })
+
+    const emitEvent = (decoded, log) =>  {
+      const filter = this._getEventSubs(EVENTS.SUB_ACCOUNT)
+      filter.forEach((sub) => {
+        sub.event.forEach(([addr, tokens]) => {
+          if(!tokens.includes(contract)) return 
+          if(decoded.from.toLowerCase() !== addr && decoded.to.toLowerCase() !== addr) return
+
+          sub.send(EVENTS.SUB_ACCOUNT,{
+            addr: addr,
+            token: contract,
+            tx: {
+              height: log.blockNumber,
+              txid: log.transactionHash,
+              from: decoded.from,
+              to: decoded.to,
+              value: decoded.value.toString()
+            }
+          })
+        })
+      })
+
+    }
+
+    sub.on('data', (log) => {
+      let decoded 
+      try {
+        decoded  = web3.eth.abi.decodeLog(
+          [
+            { type: 'address', name: 'from', indexed: true},
+            { type: 'address', name: 'to', indexed: true },
+            { type: 'uint256', name: 'value' }
+          ],
+          log.data,
+          log.topics.slice(1)
+        );
+      } catch(err) {
+        console.log('Failed to decode event', log)
+        return 
+      }
+      emitEvent(decoded, log)
+    })
+    sub.on('error', error =>
+      console.log('Error when subscribing to contract: ', contract, error),
     );
   }
 
@@ -102,19 +168,16 @@ class Hardhat extends BaseServer {
   * @param {string} evName event name
   * @emits evName
   */
-  async _filterBlockTx(txid,[param, events], evName) {
+  async _filterBlockTx(txid,filter, evName) {
     const tx = await this.web3.eth.getTransaction(txid,{})
-    param.forEach((addr) => {
-      if(!(tx.from === addr || tx.to === addr )) return true 
-      for(const ev of events) {
-        const params = ev[evName] || []
-        if(params.includes(addr)) {
-          ev.send(evName,{ 
-            tx,
-            addr
-          })
-        }
-      }
+
+    filter.forEach((sub) => {
+      sub.event.forEach(([addr]) => {
+        if(!(tx.from === addr || tx.to === addr )) return true 
+        sub.send(evName,{
+          tx, addr
+        })
+      })
     })
   }
 
@@ -146,14 +209,13 @@ class Hardhat extends BaseServer {
   /**
   * @description check if an address is a smart contract or account
   * @param {String} addr eth address
-  * @returns {Boolean} 
+  * @returns {Promise<Boolean>} 
   */
   async _isAccount(addr) {
     let res 
     try {
       res = await this.web3.eth.getCode(addr)
     } catch(err) {
-      console.log(err)
       return false 
     }
     return res === '0x' 
@@ -161,18 +223,17 @@ class Hardhat extends BaseServer {
 
   _getEventSubs(evName) {
     let filter = []
-    const subs = []
     for(let [cid,con] of this._subs) {
       const ev = con[evName]
       if(!ev) continue 
-      filter = filter.concat(ev)
-      subs.push(con)
+      filter = filter.concat({ event: ev, send: con.send})
     }
-    return [filter, subs]
+    return filter
   }
 
   async _wsSubscribeAccount(req) {
-    const account = req?.params[0]
+    let account = req?.params[0]
+    let tokens = req?.params[1] || []
     const evName = EVENTS.SUB_ACCOUNT
     if(this._subs.size >=  this._MAX_SUB_SIZE) {
       console.log('reached max sub size')
@@ -181,12 +242,21 @@ class Hardhat extends BaseServer {
     if(! await this._isAccount(account)) {
       return req.error('not an eth account')
     }
+    if(await  this._isAccount(tokens)) {
+      return req.error('not an eth contract')
+    }
+    account = account.toLowerCase()
+    tokens = tokens.map((str) => str.toLowerCase())
     if(!account) return req.error('account not sent')
     let cidSubs = this._getCidSubs(req.cid, evName)
     if(!cidSubs) {
       cidSubs = []
     }
-    cidSubs.push(account)
+    cidSubs.push([account, tokens])
+
+
+    this._subscribeToLogs(tokens)
+
     this._addSub({
       send: req.send,
       error: req.error,
