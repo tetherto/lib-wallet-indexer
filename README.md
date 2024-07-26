@@ -1,11 +1,21 @@
 # lib-wallet-indexer
 
-Node.js indexer for Ethereum. The missing API endpoints for Web3.js
+Node.js indexer for Ethereum with JSON-RPC and Websocket api
 
 ## Feaures:
 
-**getTransactionsByAddress**
-Get eth transactions by address
+JSON-RPC: **getTransactionsByAddress**
+Get ETH transactions by address
 
-**subscribeToAccount**
-Websocket events for new transactions for an address.
+WebSocket: **subscribeToAccount**
+Websocket events for new transactions for an address. Supports ERC20 tokens and ETH transactions..
+
+
+## Run
+```
+npm install
+cp ./config.json.exampl ./config.json 
+npm run start
+```
+
+

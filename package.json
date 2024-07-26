@@ -4,13 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "brittle ./test/*.test.js"
+    "test": "brittle ./test/*.test.js",
+    "start": "node index.js"
   },
   "author": "rbndg",
   "license": "MIT",
   "dependencies": {
     "fastify": "^4.28.0",
-    "node-fetch": "^2.7.0",
     "web3": "^4.10.0",
     "ws": "^8.18.0"
   },
