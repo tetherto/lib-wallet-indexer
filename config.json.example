@@ -1,3 +1,7 @@
 {
-  "uri" : "http://localhost:8080"
+  "uri" : "http://localhost:8080",
+  "web3" : "ws://localhost:8545",
+  "wsport": 8181,
+  "rpc_port" : 8008,
+  "rpc_host" : "localhost"
 }

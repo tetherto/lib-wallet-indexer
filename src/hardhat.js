@@ -23,7 +23,7 @@ class Hardhat extends BaseServer {
   start () {
     this._addRoutes()
     super.start()
-    this._web3Events()
+    this._subNewBlock()
 
     /**
     * @description Loop through all subs and if the value is set to zero, remove from array
@@ -58,7 +58,7 @@ class Hardhat extends BaseServer {
   /**
   * @description Listen to Web3 Events
   */
-  async _web3Events () {
+  async _subNewBlock () {
     const web3 = this.web3
     const blockSub = await web3.eth.subscribe('newHeads')
     blockSub.on('data', async blockhead => {
