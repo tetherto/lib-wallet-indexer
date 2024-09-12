@@ -36,10 +36,7 @@ class Hardhat extends BaseServer {
   }
 
   _addRoutes () {
-    this._addMethod({
-      method: 'status',
-      handler: this._apiStatus.bind(this)
-    })
+
     this._addMethod({
       method: 'block',
       handler: this._apiStatus.bind(this)
