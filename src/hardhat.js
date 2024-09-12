@@ -196,15 +196,16 @@ class Hardhat extends BaseServer {
     return res === '0x'
   }
 
-  _getEventSubs (evName) {
-    let filter = []
-    for (const [, con] of this._subs) {
-      const ev = con[evName]
-      if (!ev) continue
-      filter = filter.concat({ event: ev, send: con.send })
-    }
-    return filter
-  }
+/**
+ * @description Filters and maps event subscriptions for a given event name.
+ * @param {string} evName - The name of the event to filter subscriptions for.
+ * @returns {Array<{event: any, send: Function}>} An array of filtered and mapped subscriptions.
+ */
+_getEventSubs(evName) {
+  return Array.from(this._subs.values())
+    .filter(con => con[evName])
+    .map(con => ({ event: con[evName], send: con.send }));
+}
 
   /**
   * @description subscribe to account and tokens for a user
