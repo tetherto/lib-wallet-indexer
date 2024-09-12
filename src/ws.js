@@ -40,8 +40,8 @@ class Websocket extends EventEmitter {
           event: evname || 'unk',
           data
         }), (err) => {
-            console.log(err)
-          })
+          console.log(err)
+        })
       },
       error: (error) => {
         ws.send(JSON.stringify({ error }))

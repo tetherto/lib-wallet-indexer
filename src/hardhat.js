@@ -11,7 +11,7 @@ class Hardhat extends BaseServer {
   constructor (config = {}) {
     super(config)
     this.config = config
-    this.web3 = new Web3(config.web3)
+    this.web3 = new Web3(config.web3 || 'ws://localhost:8545')
     this.web3.defaultReturnFormat = {
       number: FMT_NUMBER.NUMBER
     }
@@ -20,10 +20,10 @@ class Hardhat extends BaseServer {
     this._MAX_SUB_SIZE = 10000
   }
 
-  start () {
+  async start () {
     this._addRoutes()
-    super.start()
-    this._subNewBlock()
+    await super.start()
+    await this._subNewBlock()
 
     /**
     * @description Loop through all subs and if the value is set to zero, remove from array
@@ -36,9 +36,8 @@ class Hardhat extends BaseServer {
   }
 
   _addRoutes () {
-
     this._addMethod({
-      method: 'block',
+      method: 'status',
       handler: this._apiStatus.bind(this)
     })
 
@@ -49,7 +48,14 @@ class Hardhat extends BaseServer {
   }
 
   async _apiStatus (req, reply) {
-    reply.send(this._result(req.body.id, null))
+    try {
+      const block = await this.web3.eth.getBlockNumber()
+      reply.send(this._result(req.body.id, {
+        blockHeader: block
+      }, null))
+    } catch (err) {
+      reply.send(this._error(req.body.id, 'failed to get status'))
+    }
   }
 
   /**
@@ -152,11 +158,21 @@ class Hardhat extends BaseServer {
           })
         })
       })
-    } catch(err) {
-      console.log(`Failed to filter block tx`, err)
+    } catch (err) {
+      console.log('Failed to filter block tx', err)
     }
   }
 
+  /**
+   * Retrieves transactions for a specific Ethereum address within a block range.
+   *
+   * @param {Object} req - Request object with query parameters.
+   * @param {Object} reply - Reply object for sending the response.
+   * @description
+   * Searches for transactions involving a given address within specified blocks.
+   * Collects transactions where the address is sender or recipient, up to a maximum count.
+   * Uses Web3.js for blockchain interaction.
+   */
   async _getTransactionsByAddress (req, reply) {
     const eth = this.web3.eth
     const query = req.body.param.pop()
@@ -197,16 +213,16 @@ class Hardhat extends BaseServer {
     return res === '0x'
   }
 
-/**
+  /**
  * @description Filters and maps event subscriptions for a given event name.
  * @param {string} evName - The name of the event to filter subscriptions for.
  * @returns {Array<{event: any, send: Function}>} An array of filtered and mapped subscriptions.
  */
-_getEventSubs(evName) {
-  return Array.from(this._subs.values())
-    .filter(con => con[evName])
-    .map(con => ({ event: con[evName], send: con.send }));
-}
+  _getEventSubs (evName) {
+    return Array.from(this._subs.values())
+      .filter(con => con[evName])
+      .map(con => ({ event: con[evName], send: con.send }))
+  }
 
   /**
   * @description subscribe to account and tokens for a user

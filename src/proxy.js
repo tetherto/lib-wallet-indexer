@@ -31,8 +31,6 @@ const rpcErrors = {
   notfound: { code: -32601, message: 'Method not found' }
 }
 
-
-
 class ProxyServer {
   constructor (config = {}) {
     this.port = config.rpc_port || 8008
@@ -63,7 +61,7 @@ class ProxyServer {
     return new Promise((resolve, reject) => {
       this._registerBaseRoutes()
       this.fastify.addSchema(this._rpcSchema)
-      this.fastify.register(cors,{})
+      this.fastify.register(cors, {})
       this.fastify.listen({
         host: this.host,
         port: this.port
