@@ -1,6 +1,7 @@
 const { EventEmitter } = require('events')
 const { randomBytes } = require('crypto')
 const fastify = require('fastify')
+const cors = require('@fastify/cors')
 const { WebSocketServer } = require('ws')
 
 const rpcSchema = {
@@ -44,12 +45,12 @@ class Websocket extends EventEmitter {
     })
 
     this.ws.on('connection', (ws) => {
-      ws.on('error', console.error)
+      ws.on('error', console.log)
 
       const cid = randomBytes(16).toString('hex')
       ws.on('message', (data) => {
         const rpc = this._parseMsg(ws, data, cid)
-        if (rpc.error) return ws.send({ error: 'bad request forma' })
+        if (rpc.error) return ws.send(JSON.stringify({ error: 'bad request format' }))
         this._processMsg(ws, rpc, cid)
       })
 
@@ -69,7 +70,9 @@ class Websocket extends EventEmitter {
           error: false,
           event: evname || 'unk',
           data
-        }))
+        }), (err) => {
+            console.log(err)
+          })
       },
       error: (error) => {
         ws.send(JSON.stringify({ error }))
@@ -125,6 +128,7 @@ class ProxyServer {
     return new Promise((resolve, reject) => {
       this._registerBaseRoutes()
       this.fastify.addSchema(this._rpcSchema)
+      this.fastify.register(cors,{})
       this.fastify.listen({
         host: this.host,
         port: this.port

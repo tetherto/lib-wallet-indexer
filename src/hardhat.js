@@ -64,7 +64,7 @@ class Hardhat extends BaseServer {
     blockSub.on('data', async blockhead => {
       const filter = this._getEventSubs(EVENTS.SUB_ACCOUNT)
       for (const id of blockhead.transactions) {
-        this._filterBlockTx(id, filter)
+        this._filterBlockTx(id, filter, EVENTS.SUB_ACCOUNT)
       }
     })
     blockSub.on('error', error =>
