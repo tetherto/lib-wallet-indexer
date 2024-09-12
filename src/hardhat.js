@@ -141,16 +141,20 @@ class Hardhat extends BaseServer {
   * @emits evName
   */
   async _filterBlockTx (txid, filter, evName) {
-    const tx = await this.web3.eth.getTransaction(txid, {})
+    try {
+      const tx = await this.web3.eth.getTransaction(txid, {})
 
-    filter.forEach((sub) => {
-      sub.event.forEach(([addr]) => {
-        if (!(tx.from === addr || tx.to === addr)) return true
-        sub.send(evName, {
-          tx, addr
+      filter.forEach((sub) => {
+        sub.event.forEach(([addr]) => {
+          if (!(tx.from === addr || tx.to === addr)) return true
+          sub.send(evName, {
+            tx, addr
+          })
         })
       })
-    })
+    } catch(err) {
+      console.log(`Failed to filter block tx`, err)
+    }
   }
 
   async _getTransactionsByAddress (req, reply) {
