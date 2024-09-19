@@ -59,7 +59,7 @@ class Hardhat extends BaseServer {
   }
 
   /**
-  * @description Listen to Web3 Events
+  * @description Listen to Web3 new block event and filter transactions
   */
   async _subNewBlock () {
     const web3 = this.web3

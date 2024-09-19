@@ -40,7 +40,7 @@ class Websocket extends EventEmitter {
           event: evname || 'unk',
           data
         }), (err) => {
-          console.log(err)
+            if(err) console.log('sent event failed', err)
         })
       },
       error: (error) => {
