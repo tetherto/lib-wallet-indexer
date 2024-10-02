@@ -73,8 +73,9 @@ class ProxyServer {
     })
   }
 
-  stop () {
-    return this.fastify.close()
+  async stop () {
+    await this.ws.stop()
+    await this.fastify.close()
   }
 
   _registerBaseRoutes () {
@@ -105,11 +106,11 @@ class ProxyServer {
     let error = rpcErrors[msg]
     if (!error) error = msg
 
-    return {
+    return JSON.stringify({
       jsonrpc: '2.0',
       id: id || null,
       error
-    }
+    })
   }
 
   _result (id, result) {

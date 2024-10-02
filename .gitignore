@@ -1,4 +1,6 @@
 
 config.json
+test/spec.json
+package-lock.json
 # Dependency directories
 node_modules/

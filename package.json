@@ -6,17 +6,20 @@
   "scripts": {
     "lint": "standard --fix",
     "test": "brittle ./test/*.test.js",
-    "start": "node index.js"
+    "start-hardhat": "node index.js hardhat",
+    "start-ankr": "node index.js ankr",
   },
   "author": "rbndg",
   "license": "MIT",
   "dependencies": {
+    "@ankr.com/ankr.js": "^0.5.2",
     "@fastify/cors": "^9.0.1",
     "fastify": "^4.28.0",
     "web3": "^4.10.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "brittle": "^3.5.2"
+    "brittle": "^3.5.2",
+    "standard": "^17.1.2"
   }
 }

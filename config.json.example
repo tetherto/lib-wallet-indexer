@@ -1,7 +1,9 @@
 {
   "uri" : "http://localhost:8080",
-  "web3" : "ws://localhost:8545",
-  "wsport": 8181,
+  "chain": "eth_sepolia",
+  "ankr" : "",
+  "web3": "",
+  "ws_port": 8181,
   "rpc_port" : 8008,
   "rpc_host" : "localhost"
 }
