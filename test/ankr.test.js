@@ -13,11 +13,11 @@
 // limitations under the License.
 
 'use strict'
-const { test, solo } = require('brittle')
+const { test } = require('brittle')
 const assert = require('assert')
 const { Web3 } = require('web3')
 const Ankr = require('../src/ankr')
-const config =  require('../config.json')
+const config = require('../config.json')
 const spec = require('./spec.json')
 
 test('Ankr class initialization', async (t) => {

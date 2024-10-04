@@ -1,6 +1,7 @@
 const test = require('brittle')
 const fetch = require('node-fetch')
 const Hardhat = require('../src/hardhat')
+const config = require('../config.json')
 
 async function callServer (method, param, path) {
   const response = await fetch('http://127.0.0.1:8008/' + (path || 'jsonrpc'), {
@@ -28,7 +29,7 @@ test('eth.hardhat', async function (t) {
   ]
 
   t.test('Methods', async function (t) {
-    const p = new Hardhat()
+    const p = new Hardhat(config)
     await p.start()
 
     await Promise.all(methods.map(async (m) => {
