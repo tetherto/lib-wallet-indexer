@@ -1,8 +1,8 @@
 const config = require('./config.json')
 
 const servers = {
-  hardhat : require('./src/hardhat.js'),
-  ankr : require('./src/ankr.js')
+  hardhat: require('./src/hardhat.js'),
+  ankr: require('./src/ankr.js')
 }
 async function main () {
   const servName = process.argv[2]?.toLowerCase()

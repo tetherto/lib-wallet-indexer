@@ -8,7 +8,7 @@
     "test:ankr": "brittle ./test/ankr.test.js",
     "test:proxy": "brittle ./test/proxy.test.js",
     "start-hardhat": "node index.js hardhat",
-    "start-ankr": "node index.js ankr",
+    "start-ankr": "node index.js ankr"
   },
   "author": "rbndg",
   "license": "MIT",

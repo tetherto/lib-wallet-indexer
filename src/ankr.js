@@ -35,7 +35,7 @@ class Ankr extends BaseServer {
     this._contractLogSubs = []
     this._MAX_SUB_SIZE = 10000
     this._ankr = new AnkrProvider(config.ankr)
-    this.chain = config.chain 
+    this.chain = config.chain
   }
 
   async start () {
@@ -59,8 +59,8 @@ class Ankr extends BaseServer {
     const web3 = this.web3
     await super.stop()
     clearInterval(this._subTimer)
-    await web3.currentProvider.disconnect()
-    await web3.currentProvider.removeAllListeners()
+    web3.currentProvider.disconnect()
+    web3.currentProvider.removeAllListeners()
   }
 
   _addRoutes () {
