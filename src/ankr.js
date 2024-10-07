@@ -21,6 +21,12 @@ const EVENTS = {
   SUB_ACCOUNT: 'subscribeAccount'
 }
 
+const ABI_DECODE = [
+  { type: 'address', name: 'from', indexed: true },
+  { type: 'address', name: 'to', indexed: true },
+  { type: 'uint256', name: 'value' }
+]
+
 const TOPIC_SIG = Web3.utils.sha3('Transfer(address,address,uint256)')
 
 class Ankr extends BaseServer {
@@ -158,11 +164,7 @@ class Ankr extends BaseServer {
       let decoded
       try {
         decoded = web3.eth.abi.decodeLog(
-          [
-            { type: 'address', name: 'from', indexed: true },
-            { type: 'address', name: 'to', indexed: true },
-            { type: 'uint256', name: 'value' }
-          ],
+          ABI_DECODE,
           log.data,
           log.topics.slice(1)
         )
@@ -170,7 +172,7 @@ class Ankr extends BaseServer {
         console.log('Failed to decode event', log)
         return
       }
-      this._emitEvent(contract, decoded, log)
+      this._emitContractEvent(contract, decoded, log)
     })
     sub.on('error', error =>
       console.log('Error when subscribing to contract: ', contract, error)
