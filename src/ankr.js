@@ -104,6 +104,7 @@ class Ankr extends BaseServer {
       try {
         const block = await web3.eth.getBlock(blockhead.number, true)
         if (!block) return
+        if(!block.transactions) return 
         for (const tx of block.transactions) {
           this._filterBlockTx(tx, filter, EVENTS.SUB_ACCOUNT)
         }
@@ -277,6 +278,7 @@ class Ankr extends BaseServer {
     let account = req?.params[0]
     let tokens = req?.params[1] || []
     const evName = EVENTS.SUB_ACCOUNT
+    if (!account) return req.error('account not sent')
     if (this._subs.size >= this._MAX_SUB_SIZE) {
       console.log('reached max number of subscriptions')
       return req.error('server is not available')
@@ -289,7 +291,6 @@ class Ankr extends BaseServer {
     }
     account = account.toLowerCase()
     tokens = tokens.map((str) => str.toLowerCase())
-    if (!account) return req.error('account not sent')
     let cidSubs = this._getCidSubs(req.cid, evName)
     if (!cidSubs) {
       cidSubs = []
