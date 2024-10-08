@@ -1,5 +1,6 @@
 { 
   "addr" : "",
   "pk" : "",
-  "token" : "0xbF43558373B4ED1E024186F18f611c0e209d1cEC"
+  "token" : "0xbF43558373B4ED1E024186F18f611c0e209d1cEC",
+  "indexer_uri" : "localhost:8008/"
 }

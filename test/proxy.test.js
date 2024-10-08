@@ -2,9 +2,10 @@ const test = require('brittle')
 const fetch = require('node-fetch')
 const Hardhat = require('../src/hardhat')
 const config = require('../config.json')
+const spec = require('./spec.json')
 
 async function callServer (method, param, path) {
-  const response = await fetch('http://127.0.0.1:8008/' + (path || 'jsonrpc'), {
+  const response = await fetch(spec.indexer_uri + (path || 'jsonrpc'), {
     method: 'post',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
