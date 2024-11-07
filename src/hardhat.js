@@ -67,7 +67,7 @@ class Hardhat extends BaseServer {
     blockSub.on('data', async blockhead => {
       const filter = this._getEventSubs(EVENTS.SUB_ACCOUNT)
       const block = await web3.eth.getBlock(blockhead.number)
-      if(!block.transactions) return 
+      if (!block.transactions) return
       for (const id of block.transactions) {
         this._filterBlockTx(id, filter, EVENTS.SUB_ACCOUNT)
       }
