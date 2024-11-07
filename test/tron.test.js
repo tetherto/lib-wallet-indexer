@@ -69,7 +69,6 @@ test('tron indexer methods', async t => {
   })
 })
 
-
 test('Tron class initialization', async (t) => {
   const tron = new Tron(config)
 
@@ -81,7 +80,6 @@ test('Tron class initialization', async (t) => {
   await tron.stop()
   t.pass()
 })
-
 
 test('tron _getEventSubs method', async (t) => {
   const tron = new Tron(config)
@@ -99,12 +97,11 @@ test('tron _getEventSubs method', async (t) => {
   await tron.stop()
 })
 
-
 test('tron _addSub method', async (t) => {
   const tron = new Tron(config)
 
-  function sendCb() {}
-  function errorCb() {}
+  function sendCb () {}
+  function errorCb () {}
   const subData = {
     send: sendCb,
     error: errorCb,
@@ -116,7 +113,7 @@ test('tron _addSub method', async (t) => {
   tron._addSub(subData)
 
   const addedSub = tron._subs.get('testCid')
-  t.ok(addedSub.send == sendCb, 'added sub should have correct send function')
+  t.ok(addedSub.send === sendCb, 'added sub should have correct send function')
   t.ok(addedSub.error, errorCb, 'added sub should have correct error function')
   t.ok(addedSub.testEvent === subData.param, 'added sub should have correct event parameters')
   await tron.stop()
