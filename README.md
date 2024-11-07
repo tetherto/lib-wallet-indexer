@@ -20,7 +20,7 @@ Using the the [Hardhat](hardhat.org/) proxy, you're able run an indexer on your 
 See the [wallet-test-tools](https://github.com/tetherto/wallet-lib-test-tools/tree/main/src/eth) repo to setup your local instance.
 
 ### Tron
-A proxy for interacting with Tron blockchain.
+A proxy for interacting with Tron blockchain. `tron_api_key` in config is optional, depends on your provider.
 
 ## Run
 ```sh
