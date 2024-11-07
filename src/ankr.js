@@ -104,7 +104,7 @@ class Ankr extends BaseServer {
       try {
         const block = await web3.eth.getBlock(blockhead.number, true)
         if (!block) return
-        if(!block.transactions) return 
+        if (!block.transactions) return
         for (const tx of block.transactions) {
           this._filterBlockTx(tx, filter, EVENTS.SUB_ACCOUNT)
         }
