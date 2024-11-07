@@ -59,7 +59,7 @@ class Tron extends BaseServer {
   async start () {
     this._addMethod({
       method: 'status',
-      handler: this._apiStatus.bind(this)
+      handler: this.#_apiStatus.bind(this)
     })
 
     this._addMethod({
@@ -99,7 +99,7 @@ class Tron extends BaseServer {
   /**
   * @description returns latest block height
   */
-  async _apiStatus (req, reply) {
+  async #_apiStatus (req, reply) {
     const { id } = req.body
     try {
       const block = await this.tronweb.trx.getCurrentBlock()
