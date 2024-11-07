@@ -26,5 +26,8 @@
   "devDependencies": {
     "brittle": "^3.5.2",
     "standard": "^17.1.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
