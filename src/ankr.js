@@ -138,7 +138,7 @@ class Ankr extends BaseServer {
 
         sub.send(EVENTS.SUB_ACCOUNT, {
           addr,
-          toker: contract,
+          token: contract,
           tx: {
             height: log.blockNumber,
             txid: log.transactionHash,
