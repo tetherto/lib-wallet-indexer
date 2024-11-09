@@ -67,7 +67,7 @@ class Hardhat extends BaseServer {
     blockSub.on('data', async blockhead => {
       const filter = this._getEventSubs(EVENTS.SUB_ACCOUNT)
       const block = await web3.eth.getBlock(blockhead.number)
-      if(!block || !block.transactions) return 
+      if (!block || !block.transactions) return
       for (const id of block.transactions) {
         this._filterBlockTx(id, filter, EVENTS.SUB_ACCOUNT)
       }
@@ -253,7 +253,7 @@ class Hardhat extends BaseServer {
     }
 
     const acctExists = cidSubs.filter((sub) => sub[0] === account).length > 0
-    if(acctExists) return req.error(evName, 'already subscribed to address')
+    if (acctExists) return req.error(evName, 'already subscribed to address')
     cidSubs.push([account, tokens])
 
     this._subscribeToLogs(tokens)
