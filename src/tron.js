@@ -388,16 +388,20 @@ class Tron extends BaseServer {
   **/
   async _wsSubscribeAccount (req) {
     const account = req?.params[0]
-    if (!account) return req.error('account not sent')
+    const evName = EVENTS.SUB_ACCOUNT
+    if (!account) return req.error(evName, 'account not sent')
 
     const tokens = req?.params[1] || []
-    const evName = EVENTS.SUB_ACCOUNT
     if (this._subs.size >= this._MAX_SUB_SIZE) {
       console.log('reached max number of subscriptions')
-      return req.error('server is not available')
+      return req.error(evName, 'server is not available')
     }
 
     const cidSubs = this._getCidSubs(req.cid, evName) || []
+
+    const acctExists = cidSubs.filter((sub) => sub[0] === account).length > 0
+    if (acctExists) return req.error(evName, 'already subscribed to address')
+
     cidSubs.push([account, tokens])
 
     this._subscribeToLogs(tokens)
