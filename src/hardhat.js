@@ -67,7 +67,7 @@ class Hardhat extends BaseServer {
     blockSub.on('data', async blockhead => {
       const filter = this._getEventSubs(EVENTS.SUB_ACCOUNT)
       const block = await web3.eth.getBlock(blockhead.number)
-      if(!block.transactions) return 
+      if (!block || !block.transactions) return
       for (const id of block.transactions) {
         this._filterBlockTx(id, filter, EVENTS.SUB_ACCOUNT)
       }
@@ -82,6 +82,7 @@ class Hardhat extends BaseServer {
     contracts.forEach((addr) => {
       if (this._contractLogSubs.includes(addr)) return
       this._subToContract(addr)
+      this._contractLogSubs.push(addr)
     })
   }
 
@@ -102,7 +103,6 @@ class Hardhat extends BaseServer {
         sub.event.forEach(([addr, tokens]) => {
           if (!tokens.includes(contract)) return
           if (decoded.from.toLowerCase() !== addr && decoded.to.toLowerCase() !== addr) return
-
           sub.send(EVENTS.SUB_ACCOUNT, {
             addr,
             token: contract,
@@ -136,9 +136,10 @@ class Hardhat extends BaseServer {
       }
       emitEvent(decoded, log)
     })
-    sub.on('error', error =>
+    sub.on('error', error => {
       console.log('Error when subscribing to contract: ', contract, error)
-    )
+      this._contractLogSubs = this._contractLogSubs.filter((c) => c !== contract)
+    })
   }
 
   /**
@@ -235,21 +236,24 @@ class Hardhat extends BaseServer {
     const evName = EVENTS.SUB_ACCOUNT
     if (this._subs.size >= this._MAX_SUB_SIZE) {
       console.log('reached max number of subscriptions')
-      return req.error('server is not available')
+      return req.error(evName, 'server is not available')
     }
     if (!await this._isAccount(account)) {
-      return req.error('not an eth account')
+      return req.error(evName, 'not an eth account')
     }
     if (await this._isAccount(tokens)) {
-      return req.error('not an eth contract')
+      return req.error(evName, 'not an eth contract')
     }
     account = account.toLowerCase()
     tokens = tokens.map((str) => str.toLowerCase())
-    if (!account) return req.error('account not sent')
+    if (!account) return req.error(evName, 'account not sent')
     let cidSubs = this._getCidSubs(req.cid, evName)
     if (!cidSubs) {
       cidSubs = []
     }
+
+    const acctExists = cidSubs.filter((sub) => sub[0] === account).length > 0
+    if (acctExists) return req.error(evName, 'already subscribed to address')
     cidSubs.push([account, tokens])
 
     this._subscribeToLogs(tokens)

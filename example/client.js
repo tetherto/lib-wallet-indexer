@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 const Ankr = require('../src/ankr')
 const config = require('../config.json')
 
-async function main() {
+async function main () {
   const ankr = new Ankr(config)
   await ankr.start()
   const req = {
@@ -24,7 +23,6 @@ async function main() {
       id: 'test'
     }
   }
-
 
   req.body.param = [{
     address: '0xf8200ce84c3151f64a79e723245544e1e58badec'
