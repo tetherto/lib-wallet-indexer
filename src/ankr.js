@@ -122,6 +122,7 @@ class Ankr extends BaseServer {
     contracts.forEach((addr) => {
       if (this._contractLogSubs.includes(addr)) return
       this._subToContract(addr)
+      this._contractLogSubs.push(addr)
     })
   }
 
@@ -175,9 +176,10 @@ class Ankr extends BaseServer {
       }
       this._emitContractEvent(contract, decoded, log)
     })
-    sub.on('error', error =>
+    sub.on('error', error => {
+      this._contractLogSubs = this._contractLogSubs.filter((c) => c !== contract)
       console.log('Error when subscribing to contract: ', contract, error)
-    )
+    })
   }
 
   /**
@@ -278,16 +280,16 @@ class Ankr extends BaseServer {
     let account = req?.params[0]
     let tokens = req?.params[1] || []
     const evName = EVENTS.SUB_ACCOUNT
-    if (!account) return req.error('account not sent')
+    if (!account) return req.error(evName, 'account not sent')
     if (this._subs.size >= this._MAX_SUB_SIZE) {
       console.log('reached max number of subscriptions')
-      return req.error('server is not available')
+      return req.error(evName, 'server is not available')
     }
     if (!await this._isAccount(account)) {
-      return req.error('not an eth account')
+      return req.error(evName, 'not an eth account')
     }
     if (await this._isAccount(tokens)) {
-      return req.error('not an eth contract')
+      return req.error(evName, 'not an eth contract')
     }
     account = account.toLowerCase()
     tokens = tokens.map((str) => str.toLowerCase())
@@ -295,6 +297,10 @@ class Ankr extends BaseServer {
     if (!cidSubs) {
       cidSubs = []
     }
+
+    const acctExists = cidSubs.filter((sub) => sub[0] === account).length > 0
+    if (acctExists) return req.error(evName, 'already subscribed to address')
+
     cidSubs.push([account, tokens])
 
     this._subscribeToLogs(tokens)
