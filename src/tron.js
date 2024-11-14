@@ -341,26 +341,28 @@ class Tron extends BaseServer {
     const query = req.body.param.pop()
     const id = req.body.id
     const maxRecords = query.pageSize || 100
-    const firstBlock = query.fromBlock || 0
+    let { fromBlock, toBlock } = query
 
-    const lastBlock = query.toBlock || (async () => {
+    if (!toBlock) {
       try {
-        const currBlock = await this.tronweb.trx.getCurrentBlock()
-        return currBlock?.block_header?.raw_data?.number || firstBlock + 10 // setting some sensible defaults
-      } catch (err) {
-        console.log('failed getting current block ', err)
-        return firstBlock + 10
-      }
-    })()
+        const block = await this.tronweb.trx.getCurrentBlock()
+        toBlock = block?.block_header?.raw_data?.number
+      } catch (err) {}
+    }
+
+    if (!toBlock) return reply.send(this._error(id, 'latest block is missing'))
+    if (!fromBlock) {
+      fromBlock = toBlock - 10 // setting some reasonable defaults
+    }
 
     // sanity check
-    if (firstBlock > lastBlock) {
-      return reply.send(this._result(id, []))
+    if (fromBlock > toBlock) {
+      return reply.send(this._error(id, 'toBlock must be higher than fromBlock'))
     }
 
     const blockNumbers = Array.from(
-      { length: lastBlock - firstBlock + 1 },
-      (_, i) => firstBlock + i
+      { length: toBlock - fromBlock + 1 },
+      (_, i) => fromBlock + i
     )
 
     const txs = await Promise.all(blockNumbers.map(bn => this.#getBlockTransactions(bn)))
