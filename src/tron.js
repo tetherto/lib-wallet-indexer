@@ -15,6 +15,7 @@
 const { TronWeb } = require('tronweb')
 const _ = require('lodash')
 const BaseServer = require('./proxy')
+const { Debouncer } = require('./utils')
 
 const TRANSFER_METHOD = 'ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
@@ -26,6 +27,8 @@ class Tron extends BaseServer {
   #clearEmptySubIntervalRef
   #queryBlockIntervalRef
   #lastProcessedBlock
+  #getBlockTxsCache
+  #getBlockTxsDebouncedClearCache
 
   constructor (config = {}) {
     super(config)
@@ -53,6 +56,8 @@ class Tron extends BaseServer {
     this._subs = new Map()
     this._contractSubs = new Set()
     this.#lastProcessedBlock = 0
+    this.#getBlockTxsCache = new Map()
+    this.#getBlockTxsDebouncedClearCache = new Debouncer(10000)
     this._MAX_SUB_SIZE = 10000
   }
 
@@ -312,15 +317,27 @@ class Tron extends BaseServer {
    * @description get's block transactions by height and returns parsed representation of these transactions
    **/
   async #getBlockTransactions (ix) {
+    const cachedTxs = this.#getBlockTxsCache.get(ix)
+    if (cachedTxs?.length) return cachedTxs
+
     try {
       const block = await this.tronweb.trx.getBlockByNumber(ix)
       const txs = block?.transactions
       if (!(txs || []).length) return []
 
-      return txs
+      const parsedTxs = txs
         .map(tx => this.#parseTx(tx))
         .filter(Boolean)
         .map(tx => ({ ...tx, height: ix }))
+
+      this.#getBlockTxsCache.set(ix, parsedTxs)
+
+      // start debounced cache reset timeout
+      this.#getBlockTxsDebouncedClearCache.reset(() => {
+        this.#getBlockTxsCache.clear()
+      })
+
+      return parsedTxs
     } catch (err) {
       console.log(`Failed to fetch block ${ix}:`, err)
       return []
