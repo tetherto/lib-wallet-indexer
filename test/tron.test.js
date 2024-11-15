@@ -136,44 +136,32 @@ test('tron subscribe account', async (t) => {
         t.ok(ev === 'subscribeAccount', 'event name is correct')
         t.ok(data.addr === 'TSSZG8wWojpog8mBJ2Sunm5r6bDn1PM5KJ', 'addr is correct')
         t.ok(data.token === 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', 'token is correct')
-        t.ok(data.tx.height === 65475881, 'height is correct')
-        t.ok(data.tx.txid === '14f76e7133c08129cdd7bad50e46ef1260ada32aa5e5d3f9f09463eae175dd10', 'tx hash is correct')
-        t.ok(data.tx.fee === 13844850, 'fee is correct')
-        t.ok(data.tx.value === 5000000, 'base amount is correct (6 dec places)')
-        t.ok(data.tx.from === 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ', 'sender address is correct')
-        t.ok(data.tx.to === 'TSSZG8wWojpog8mBJ2Sunm5r6bDn1PM5KJ', 'recipient address is correct')
+        t.ok(data.height === 65475881, 'height is correct')
+        t.ok(data.txid === '14f76e7133c08129cdd7bad50e46ef1260ada32aa5e5d3f9f09463eae175dd10', 'tx hash is correct')
+        t.ok(data.fee === 13844850, 'fee is correct')
+        t.ok(data.value === 5000000, 'base amount is correct (6 dec places)')
+        t.ok(data.from === 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ', 'sender address is correct')
+        t.ok(data.to === 'TSSZG8wWojpog8mBJ2Sunm5r6bDn1PM5KJ', 'recipient address is correct')
         resolve()
       }
     })
 
     // emit an event
     tron._emitContractEvent({
-      id: '14f76e7133c08129cdd7bad50e46ef1260ada32aa5e5d3f9f09463eae175dd10',
+      token: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+      height: 65475881,
+      txid: '14f76e7133c08129cdd7bad50e46ef1260ada32aa5e5d3f9f09463eae175dd10',
+      from: 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ',
+      to: 'TSSZG8wWojpog8mBJ2Sunm5r6bDn1PM5KJ',
+      value: 5000000,
       fee: 13844850,
-      blockNumber: 65475881,
-      blockTimeStamp: 1727075901000,
-      contractResult: [
-        '0000000000000000000000000000000000000000000000000000000000000000'
-      ],
-      contract_address: '41a614f803b6fd780986a42c78ec9c7f77e6ded13c',
       receipt: {
         energy_fee: 13499850,
         energy_usage_total: 64285,
         net_fee: 345000,
         result: 'SUCCESS',
         energy_penalty_total: 49635
-      },
-      log: [
-        {
-          address: 'a614f803b6fd780986a42c78ec9c7f77e6ded13c',
-          topics: [
-            'ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
-            '000000000000000000000000e96051e8da2f0cc02c372252dfacfdb129b5d4d6',
-            '000000000000000000000000b4ae27db126ab459139d0e1f073206b6575b0b17'
-          ],
-          data: '00000000000000000000000000000000000000000000000000000000004c4b40'
-        }
-      ]
+      }
     })
   })
 

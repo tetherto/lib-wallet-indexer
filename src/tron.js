@@ -27,8 +27,10 @@ class Tron extends BaseServer {
   #clearEmptySubIntervalRef
   #queryBlockIntervalRef
   #lastProcessedBlock
-  #getBlockTxsCache
-  #getBlockTxsDebouncedClearCache
+  #blockTxsCache
+  #blockTxsDebouncedClearCache
+  #transactionInfoClearCache
+  #transactionInfoCache
 
   constructor (config = {}) {
     super(config)
@@ -56,8 +58,10 @@ class Tron extends BaseServer {
     this._subs = new Map()
     this._contractSubs = new Set()
     this.#lastProcessedBlock = 0
-    this.#getBlockTxsCache = new Map()
-    this.#getBlockTxsDebouncedClearCache = new Debouncer(10000)
+    this.#blockTxsCache = new Map()
+    this.#transactionInfoCache = new Map()
+    this.#blockTxsDebouncedClearCache = new Debouncer(10000)
+    this.#transactionInfoClearCache = new Debouncer(10000)
     this._MAX_SUB_SIZE = 10000
   }
 
@@ -70,6 +74,11 @@ class Tron extends BaseServer {
     this._addMethod({
       method: 'getTransactionsByAddress',
       handler: this.#getTransactionsByAddress.bind(this)
+    })
+
+    this._addMethod({
+      method: 'getContractTransactionsByAddress',
+      handler: this.#getContractTransactionsByAddress.bind(this)
     })
 
     await super.start()
@@ -119,7 +128,7 @@ class Tron extends BaseServer {
   }
 
   /**
-  * @description Get new blocks and filter transactions
+  * @description Get new blocks, filter transactions, notify subscribers
   */
   async #subNewBlock () {
     try {
@@ -135,7 +144,7 @@ class Tron extends BaseServer {
       if (!(txs || []).length) return
 
       this.#processTxs({ height, txs })
-      this.#processContractTxs(txs)
+      this.#processContractTxs(txs).forEach(tx => this._emitContractEvent(tx))
       this.#lastProcessedBlock = height
     } catch (err) {
       console.log('Error getting new block: ', err)
@@ -161,31 +170,7 @@ class Tron extends BaseServer {
       })
   }
 
-  /**
-  * @description processes smart contract transactions and broadcasts messages to appropriate subscribers
-  */
-  #processContractTxs (txs) {
-    txs
-      .filter(tx => this.#isContractTx(tx))
-      .map(async tx => {
-        try {
-          const txInfo = await this.tronweb.trx.getTransactionInfo(tx.txID)
-          return txInfo
-        } catch (err) {
-          console.log('failed getting transaction info: ', err)
-          return null
-        }
-      })
-      .filter(Boolean)
-      .filter(tx => this.#isValidContractTx(tx))
-      .forEach(tx => this._emitContractEvent(tx))
-  }
-
-  /**
-   * @description process contract event and send data to appropriate subscribers
-   **/
-  _emitContractEvent (tx) {
-    const subs = this._getEventSubs(EVENTS.SUB_ACCOUNT)
+  #parseContractTx (tx) {
     const log = _.get(tx, 'log[0]')
     const topics = log.topics
     const amount = parseInt(log.data, 16)
@@ -193,24 +178,79 @@ class Tron extends BaseServer {
     const toAddress = TronWeb.address.fromHex(`0x${topics[2].substr(24, topics[2].length)}`)
     const fromAddress = TronWeb.address.fromHex(`0x${topics[1].substr(24, topics[1].length)}`)
 
+    return {
+      token: TronWeb.address.fromHex(tx.contract_address),
+      height: tx.blockNumber,
+      txid: tx.id,
+      from: fromAddress,
+      to: toAddress,
+      value: amount,
+      fee: tx.fee,
+      receipt: tx.receipt
+    }
+  }
+
+  async #getTransactionInfo (txID) {
+    try {
+      const cachedTxInfo = this.#transactionInfoCache.get(txID)
+      if (cachedTxInfo) {
+        return cachedTxInfo
+      }
+
+      const txInfo = await this.tronweb.trx.getTransactionInfo(txID)
+      this.#transactionInfoCache.set(txID, txInfo)
+
+      // start debounced cache reset timeout
+      this.#transactionInfoClearCache.reset(() => {
+        this.#transactionInfoCache.clear()
+      })
+
+      return txInfo
+    } catch (err) {
+      console.log('failed getting transaction info: ', err)
+      return null
+    }
+  }
+
+  /**
+  * @description checks to see if SC transaction is among subscribed contracts
+  */
+  #isContractTxAmongSubscribedContracts (tx) {
+    const contract = _.get(tx, 'raw_data.contract[0]')
+    const contractAddr = TronWeb.address.fromHex(_.get(contract, 'parameter.value.contract_address'))
+    return this._contractSubs.has(contractAddr)
+  }
+
+  /**
+  * @description processes smart contract transactions and broadcasts messages to appropriate subscribers
+  */
+  async #processContractTxs (txs) {
+    const filteredTxs = txs
+      .filter(tx => this.#isContractTx(tx))
+      .filter(tx => this.#isContractTxAmongSubscribedContracts(tx))
+
+    const txsWithInfo = await Promise.all(
+      filteredTxs.map(tx => this.#getTransactionInfo(tx.txID))
+    )
+
+    return txsWithInfo
+      .filter(Boolean)
+      .filter(tx => this.#isValidContractTx(tx))
+      .map(tx => this.#parseContractTx(tx))
+  }
+
+  /**
+   * @description process contract event and send data to appropriate subscribers
+   **/
+  _emitContractEvent (tx) {
+    const subs = this._getEventSubs(EVENTS.SUB_ACCOUNT)
+
     subs.forEach(sub => {
       sub.event?.forEach(([addr, tokens]) => {
-        if (!tokens.includes(TronWeb.address.fromHex(tx.contract_address))) return
-        if (![toAddress.toLowerCase(), fromAddress.toLowerCase()].includes(addr.toLowerCase())) return
+        if (!tokens.includes(TronWeb.address.fromHex(tx.token))) return
+        if (![tx.to.toLowerCase(), tx.from.toLowerCase()].includes(addr.toLowerCase())) return
 
-        sub.send(EVENTS.SUB_ACCOUNT, {
-          addr,
-          token: TronWeb.address.fromHex(tx.contract_address),
-          tx: {
-            height: tx.blockNumber,
-            txid: tx.id,
-            from: fromAddress,
-            to: toAddress,
-            value: amount,
-            fee: tx.fee,
-            receipt: tx.receipt
-          }
-        })
+        sub.send(EVENTS.SUB_ACCOUNT, { addr, ...tx })
       })
     })
   }
@@ -226,11 +266,6 @@ class Tron extends BaseServer {
 
     const contract = _.get(tx, 'raw_data.contract[0]')
     if (_.get(contract, 'type') !== 'TriggerSmartContract') {
-      return false
-    }
-
-    const contractAddr = TronWeb.address.fromHex(_.get(contract, 'parameter.value.contract_address'))
-    if (!this._contractSubs.has(contractAddr)) {
       return false
     }
 
@@ -299,7 +334,8 @@ class Tron extends BaseServer {
       value: param.value.amount,
       to: toAddress,
       from: fromAddress,
-      timestamp: tx.raw_data.timestamp
+      timestamp: tx.raw_data.timestamp,
+      height: tx.height
     }
   }
 
@@ -317,31 +353,55 @@ class Tron extends BaseServer {
    * @description get's block transactions by height and returns parsed representation of these transactions
    **/
   async #getBlockTransactions (ix) {
-    const cachedTxs = this.#getBlockTxsCache.get(ix)
+    const cachedTxs = this.#blockTxsCache.get(ix)
     if (cachedTxs?.length) return cachedTxs
 
     try {
       const block = await this.tronweb.trx.getBlockByNumber(ix)
-      const txs = block?.transactions
-      if (!(txs || []).length) return []
+      const txs = block?.transactions || []
+      if (!txs.length) return []
 
-      const parsedTxs = txs
-        .map(tx => this.#parseTx(tx))
-        .filter(Boolean)
-        .map(tx => ({ ...tx, height: ix }))
-
-      this.#getBlockTxsCache.set(ix, parsedTxs)
-
-      // start debounced cache reset timeout
-      this.#getBlockTxsDebouncedClearCache.reset(() => {
-        this.#getBlockTxsCache.clear()
+      const txsWithBlockHeight = txs.map(tx => {
+        tx.height = ix
+        return tx
       })
 
-      return parsedTxs
+      this.#blockTxsCache.set(ix, txsWithBlockHeight)
+
+      // start debounced cache reset timeout
+      this.#blockTxsDebouncedClearCache.reset(() => {
+        this.#blockTxsCache.clear()
+      })
+
+      return txsWithBlockHeight
     } catch (err) {
       console.log(`Failed to fetch block ${ix}:`, err)
       return []
     }
+  }
+
+  async #getBlockRangeFromQueryParams({ fromBlock, toBlock }) {
+    if (!toBlock) {
+      try {
+        const block = await this.tronweb.trx.getCurrentBlock()
+        toBlock = block?.block_header?.raw_data?.number
+      } catch (err) {}
+    }
+
+    if (!toBlock) return null
+    if (!fromBlock) {
+      fromBlock = toBlock - 10 // setting some reasonable defaults
+    }
+
+    // sanity check
+    if (fromBlock > toBlock) {
+      return null
+    }
+
+    return Array.from(
+      { length: toBlock - fromBlock + 1 },
+      (_, i) => fromBlock + i
+    )
   }
 
   /**
@@ -358,37 +418,54 @@ class Tron extends BaseServer {
     const query = req.body.param.pop()
     const id = req.body.id
     const maxRecords = query.pageSize || 100
-    let { fromBlock, toBlock } = query
 
-    if (!toBlock) {
-      try {
-        const block = await this.tronweb.trx.getCurrentBlock()
-        toBlock = block?.block_header?.raw_data?.number
-      } catch (err) {}
+    const blockNumbers = await this.#getBlockRangeFromQueryParams(query)
+    if (!blockNumbers) {
+      return reply.send(this._error(id, 'invalid query params [fromBlock, toBlock]'))
     }
-
-    if (!toBlock) return reply.send(this._error(id, 'latest block is missing'))
-    if (!fromBlock) {
-      fromBlock = toBlock - 10 // setting some reasonable defaults
-    }
-
-    // sanity check
-    if (fromBlock > toBlock) {
-      return reply.send(this._error(id, 'toBlock must be higher than fromBlock'))
-    }
-
-    const blockNumbers = Array.from(
-      { length: toBlock - fromBlock + 1 },
-      (_, i) => fromBlock + i
-    )
 
     const txs = await Promise.all(blockNumbers.map(bn => this.#getBlockTransactions(bn)))
-    const filteredTxs = txs
+
+    const parsedTxs = txs
       .flat()
+      .filter(Boolean)
+      .map(tx => this.#parseTx(tx))
+      .filter(Boolean)
       .filter(tx => [tx.from.toLowerCase(), tx.to.toLowerCase()].includes(query.address.toLowerCase()))
       .slice(0, maxRecords)
 
-    return reply.send(this._result(id, filteredTxs))
+    return reply.send(this._result(id, parsedTxs))
+  }
+
+  /**
+   * Retrieves transactions for a specific address within a block range.
+   *
+   * @param {Object} req - Request object with query parameters.
+   * @param {Object} reply - Reply object for sending the response.
+   * @description
+   * Searches for transactions involving a given address within specified blocks.
+   * Collects transactions where the address is sender or recipient, up to a maximum count.
+   * Uses tronweb for blockchain interaction.
+   */
+  async #getContractTransactionsByAddress (req, reply) {
+    const query = req.body.param.pop()
+    const id = req.body.id
+    const maxRecords = query.pageSize || 100
+
+    const blockNumbers = await this.#getBlockRangeFromQueryParams(query)
+    if (!blockNumbers) {
+      return reply.send(this._error(id, 'invalid query params [fromBlock, toBlock]'))
+    }
+
+    const txs = await Promise.all(blockNumbers.map(bn => this.#getBlockTransactions(bn)))
+    const parsedTxs = await this.#processContractTxs(txs.flat())
+
+    const filteredTxt = parsedTxs
+      .filter(tx => tx.token === query.token_address)
+      .filter(tx => [tx.from.toLowerCase(), tx.to.toLowerCase()].includes(query.address.toLowerCase()))
+      .slice(0, maxRecords)
+
+    return reply.send(this._result(id, filteredTxt))
   }
 
   /**
