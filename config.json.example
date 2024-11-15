@@ -5,5 +5,9 @@
   "web3": "",
   "ws_port": 8181,
   "rpc_port" : 8008,
-  "rpc_host" : "localhost"
+  "rpc_host" : "localhost",
+  "tron_solidity_api": "https://enterprise.onerpc.com/rest/tron",
+  "tron_api": "https://enterprise.onerpc.com/rest/tron",
+  "tron_api_key": "",
+  "tron_block_read_interval_ms": 2000
 }
