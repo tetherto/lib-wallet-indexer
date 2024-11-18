@@ -101,7 +101,7 @@ class Tron extends BaseServer {
   }
 
   /**
-  * @description stops indexer adn clears all intervals
+  * @description stops indexer and clears all intervals
   */
   async stop () {
     await super.stop()
@@ -143,8 +143,15 @@ class Tron extends BaseServer {
       const txs = currBlock?.transactions
       if (!(txs || []).length) return
 
+      // process regular txs
       this.#processTxs({ height, txs })
-      this.#processContractTxs(txs).forEach(tx => this._emitContractEvent(tx))
+
+      // process smart contract txs
+      if (this._contractSubs.size) {
+        const contractTxs = await this.#processContractTxs(txs)
+        contractTxs.forEach(tx => this._emitContractEvent(tx))
+      }
+
       this.#lastProcessedBlock = height
     } catch (err) {
       console.log('Error getting new block: ', err)
@@ -222,7 +229,7 @@ class Tron extends BaseServer {
   }
 
   /**
-  * @description processes smart contract transactions and broadcasts messages to appropriate subscribers
+  * @description processes smart contract transactions
   */
   async #processContractTxs (txs) {
     const filteredTxs = txs
