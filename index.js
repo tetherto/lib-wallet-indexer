@@ -2,6 +2,7 @@ const config = require('./config.json')
 
 const servers = {
   hardhat: require('./src/hardhat.js'),
+  solana: require('./src/solana.js'),
   ankr: require('./src/ankr.js')
 }
 async function main () {
