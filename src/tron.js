@@ -322,23 +322,28 @@ class Tron extends BaseServer {
     if (!contract.length) return null
 
     contract = contract[0]
-    if (contract.type !== 'TransferContract') return null
+    if (!['TransferContract', 'TriggerSmartContract'].includes(contract.type)) return null
 
     const param = contract.parameter
-    if (param.type_url !== 'type.googleapis.com/protocol.TransferContract') {
+    if (!['type.googleapis.com/protocol.TransferContract', 'type.googleapis.com/protocol.TriggerSmartContract'].includes(param.type_url)) {
       return null
     }
 
-    if (+param.value?.amount < 0) return null
+    const amount = +param.value?.amount || parseInt(param.value?.data.substring(74), 16)
+    if (!amount) return null
 
-    if (!param.value?.owner_address || !param.value?.to_address) return null
+    const ownerAddress = param.value?.owner_address
+    if (!ownerAddress) return null
 
-    const fromAddress = TronWeb.address.fromHex(param.value.owner_address)
-    const toAddress = TronWeb.address.fromHex(param.value.to_address)
+    const recipientAddress = param.value?.to_address || '41' + param.value?.data.substring(32, 72)
+    if (!recipientAddress) return null
+
+    const fromAddress = TronWeb.address.fromHex(ownerAddress)
+    const toAddress = TronWeb.address.fromHex(recipientAddress)
 
     return {
       txid: tx.txID,
-      value: param.value.amount,
+      value: amount,
       to: toAddress,
       from: fromAddress,
       timestamp: tx.raw_data.timestamp,
