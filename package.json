@@ -20,14 +20,13 @@
     "fastify": "^4.28.0",
     "web3": "^4.10.0",
     "ws": "^8.18.0",
-    "tronweb": "6.0.0",
-    "lodash": "4.17.21"
+    "tronweb": "6.0.0"
   },
   "devDependencies": {
     "brittle": "^3.5.2",
     "standard": "^17.1.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   }
 }

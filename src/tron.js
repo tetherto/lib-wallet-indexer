@@ -13,7 +13,6 @@
 // limitations under the License.
 
 const { TronWeb } = require('tronweb')
-const _ = require('lodash')
 const BaseServer = require('./proxy')
 const { Debouncer } = require('./utils')
 
@@ -200,9 +199,9 @@ class Tron extends BaseServer {
    **/
   #isValidContractTx (tx) {
     if (tx.result === 'FAILED') return false
-    if (_.get(tx, 'receipt.result') !== 'SUCCESS') return false
-    if (!_.isArray(_.get(tx, 'log'))) return false
-    if (_.get(tx, 'log.length') > 1) return false
+    if (tx?.receipt?.result !== 'SUCCESS') return false
+    if (!Array.isArray(tx?.log)) return false
+    if (tx?.log?.length > 1) return false
     return tx.log[0].topics?.[0] === TRANSFER_METHOD
   }
 
