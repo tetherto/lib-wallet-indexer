@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-const { TronWeb, Event } = require('tronweb')
+const { TronWeb } = require('tronweb')
 const _ = require('lodash')
 const BaseServer = require('./proxy')
 const { Debouncer } = require('./utils')
@@ -206,13 +206,13 @@ class Tron extends BaseServer {
     return tx.log[0].topics?.[0] === TRANSFER_METHOD
   }
 
-  #parseContractByType(type, value) {
+  #parseContractByType (type, value) {
     switch (type) {
       case 'TransferContract':
         return {
           amount: +value.amount,
           from: value.owner_address,
-          to: value.to_address,
+          to: value.to_address
         }
       case 'TriggerSmartContract':
         return {
@@ -297,7 +297,7 @@ class Tron extends BaseServer {
     }
   }
 
-  async #getBlockRangeFromQueryParams({ fromBlock, toBlock }) {
+  async #getBlockRangeFromQueryParams ({ fromBlock, toBlock }) {
     if (!toBlock) {
       try {
         const block = await this.tronweb.trx.getCurrentBlock()
