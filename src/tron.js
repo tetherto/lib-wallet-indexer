@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-const { TronWeb } = require('tronweb')
+const { TronWeb, Event } = require('tronweb')
 const _ = require('lodash')
 const BaseServer = require('./proxy')
 const { Debouncer } = require('./utils')
@@ -74,11 +74,6 @@ class Tron extends BaseServer {
     this._addMethod({
       method: 'getTransactionsByAddress',
       handler: this.#getTransactionsByAddress.bind(this)
-    })
-
-    this._addMethod({
-      method: 'getContractTransactionsByAddress',
-      handler: this.#getContractTransactionsByAddress.bind(this)
     })
 
     await super.start()
@@ -143,15 +138,7 @@ class Tron extends BaseServer {
       const txs = currBlock?.transactions
       if (!(txs || []).length) return
 
-      // process regular txs
       this.#processTxs({ height, txs })
-
-      // process smart contract txs
-      if (this._contractSubs.size) {
-        const contractTxs = await this.#processContractTxs(txs)
-        contractTxs.forEach(tx => this._emitContractEvent(tx))
-      }
-
       this.#lastProcessedBlock = height
     } catch (err) {
       console.log('Error getting new block: ', err)
@@ -169,32 +156,21 @@ class Tron extends BaseServer {
       .map(tx => ({ ...tx, height }))
       .forEach(tx => {
         subs.forEach((sub) => {
-          sub.event?.forEach(([addr]) => {
+          sub.event?.forEach(([addr, tokens]) => {
             if (![tx.from.toLowerCase(), tx.to.toLowerCase()].includes(addr.toLowerCase())) return
-            sub.send(EVENTS.SUB_ACCOUNT, { tx, addr })
+
+            const pld = {
+              tx: { ...tx, addr }
+            }
+
+            if (tx.token && (tokens || []).includes(tx.token)) {
+              pld.token = tx.token
+            }
+
+            sub.send(EVENTS.SUB_ACCOUNT, pld)
           })
         })
       })
-  }
-
-  #parseContractTx (tx) {
-    const log = _.get(tx, 'log[0]')
-    const topics = log.topics
-    const amount = parseInt(log.data, 16)
-
-    const toAddress = TronWeb.address.fromHex(`0x${topics[2].substr(24, topics[2].length)}`)
-    const fromAddress = TronWeb.address.fromHex(`0x${topics[1].substr(24, topics[1].length)}`)
-
-    return {
-      token: TronWeb.address.fromHex(tx.contract_address),
-      height: tx.blockNumber,
-      txid: tx.id,
-      from: fromAddress,
-      to: toAddress,
-      value: amount,
-      fee: tx.fee,
-      receipt: tx.receipt
-    }
   }
 
   async #getTransactionInfo (txID) {
@@ -220,132 +196,61 @@ class Tron extends BaseServer {
   }
 
   /**
-  * @description checks to see if SC transaction is among subscribed contracts
-  */
-  #isContractTxAmongSubscribedContracts (tx) {
-    const contract = _.get(tx, 'raw_data.contract[0]')
-    const contractAddr = TronWeb.address.fromHex(_.get(contract, 'parameter.value.contract_address'))
-    return this._contractSubs.has(contractAddr)
-  }
-
-  /**
-  * @description processes smart contract transactions
-  */
-  async #processContractTxs (txs) {
-    const filteredTxs = txs
-      .filter(tx => this.#isContractTx(tx))
-      .filter(tx => this.#isContractTxAmongSubscribedContracts(tx))
-
-    const txsWithInfo = await Promise.all(
-      filteredTxs.map(tx => this.#getTransactionInfo(tx.txID))
-    )
-
-    return txsWithInfo
-      .filter(Boolean)
-      .filter(tx => this.#isValidContractTx(tx))
-      .map(tx => this.#parseContractTx(tx))
-  }
-
-  /**
-   * @description process contract event and send data to appropriate subscribers
-   **/
-  _emitContractEvent (tx) {
-    const subs = this._getEventSubs(EVENTS.SUB_ACCOUNT)
-
-    subs.forEach(sub => {
-      sub.event?.forEach(([addr, tokens]) => {
-        if (!tokens.includes(TronWeb.address.fromHex(tx.token))) return
-        if (![tx.to.toLowerCase(), tx.from.toLowerCase()].includes(addr.toLowerCase())) return
-
-        sub.send(EVENTS.SUB_ACCOUNT, { addr, ...tx })
-      })
-    })
-  }
-
-  /**
-   * @description checks if it's a smart contract transactions
-   **/
-  #isContractTx (tx) {
-    const contractRet = _.get(tx, 'ret[0].contractRet')
-    if (contractRet !== 'SUCCESS') {
-      return false
-    }
-
-    const contract = _.get(tx, 'raw_data.contract[0]')
-    if (_.get(contract, 'type') !== 'TriggerSmartContract') {
-      return false
-    }
-
-    return true
-  }
-
-  /**
    * @description checks if it's a valid smart contract transactions
    **/
   #isValidContractTx (tx) {
-    if (tx.result === 'FAILED') {
-      return false
+    if (tx.result === 'FAILED') return false
+    if (_.get(tx, 'receipt.result') !== 'SUCCESS') return false
+    if (!_.isArray(_.get(tx, 'log'))) return false
+    if (_.get(tx, 'log.length') > 1) return false
+    return tx.log[0].topics?.[0] === TRANSFER_METHOD
+  }
+
+  #parseContractByType(type, value) {
+    switch (type) {
+      case 'TransferContract':
+        return {
+          amount: +value.amount,
+          from: value.owner_address,
+          to: value.to_address,
+        }
+      case 'TriggerSmartContract':
+        return {
+          amount: Number.parseInt(value.data.substring(74), 16),
+          from: value.owner_address,
+          to: '41' + value.data?.substring(32, 72),
+          token: value.contract_address ? TronWeb.address.fromHex(value.contract_address) : null
+        }
+      default:
+        return null
     }
-
-    if (_.get(tx, 'receipt.result') !== 'SUCCESS') {
-      return false
-    }
-
-    if (!_.isArray(_.get(tx, 'log'))) {
-      return false
-    }
-
-    if (_.get(tx, 'log.length') > 1) {
-      return false
-    }
-
-    const log = tx.log[0]
-    const topics = log.topics
-
-    if (topics[0] !== TRANSFER_METHOD) {
-      return false
-    }
-
-    return true
   }
 
   /**
    * @description parses raw transaction data and returns mandatory fields
    **/
   #parseTx (tx) {
-    const contractRet = _.get(tx, 'ret[0].contractRet')
+    const contractRet = tx?.ret?.[0]?.contractRet
     if (contractRet !== 'SUCCESS') return null
 
-    if (!tx.raw_data || !tx.raw_data.contract) return null
+    const contract = tx?.raw_data?.contract?.[0]
+    if (!contract) return null
 
-    let contract = tx.raw_data.contract
-    if (!contract.length) return null
+    const contractValue = contract.parameter?.value
+    if (!contractValue) return null
 
-    contract = contract[0]
-    if (!['TransferContract', 'TriggerSmartContract'].includes(contract.type)) return null
+    const txDetails = this.#parseContractByType(contract.type, contractValue)
+    if (!txDetails) return null
 
-    const param = contract.parameter
-    if (!['type.googleapis.com/protocol.TransferContract', 'type.googleapis.com/protocol.TriggerSmartContract'].includes(param.type_url)) {
-      return null
-    }
-
-    const amount = +param.value?.amount || parseInt(param.value?.data.substring(74), 16)
-    if (!amount) return null
-
-    const ownerAddress = param.value?.owner_address
-    if (!ownerAddress) return null
-
-    const recipientAddress = param.value?.to_address || '41' + param.value?.data.substring(32, 72)
-    if (!recipientAddress) return null
-
-    const fromAddress = TronWeb.address.fromHex(ownerAddress)
-    const toAddress = TronWeb.address.fromHex(recipientAddress)
+    const { amount, from, to, token } = txDetails
+    if (amount <= 0 || !TronWeb.isAddress(from) || !TronWeb.isAddress(to)) return null
 
     return {
-      txid: tx.txID,
+      token,
       value: amount,
-      to: toAddress,
-      from: fromAddress,
+      txid: tx.txID,
+      to: TronWeb.address.fromHex(to),
+      from: TronWeb.address.fromHex(from),
       timestamp: tx.raw_data.timestamp,
       height: tx.height
     }
@@ -429,6 +334,7 @@ class Tron extends BaseServer {
   async #getTransactionsByAddress (req, reply) {
     const query = req.body.param.pop()
     const id = req.body.id
+    const tokenAddr = query.token_address
     const maxRecords = query.pageSize || 100
 
     const blockNumbers = await this.#getBlockRangeFromQueryParams(query)
@@ -443,41 +349,27 @@ class Tron extends BaseServer {
       .filter(Boolean)
       .map(tx => this.#parseTx(tx))
       .filter(Boolean)
+      .filter(tx => !tx.token || tx.token === tokenAddr)
       .filter(tx => [tx.from.toLowerCase(), tx.to.toLowerCase()].includes(query.address.toLowerCase()))
+
+    // for smart contract transfers, get transaction info and perform extra validation (SC txs will have .token value)
+    const enrichedTxs = await Promise.all(
+      parsedTxs.map(async tx => {
+        if (!tx.token) return tx
+        if (tokenAddr && tx.token !== tokenAddr) return null
+
+        const txInfo = await this.#getTransactionInfo(tx.txid)
+
+        return { ...tx, isValidTransfer: this.#isValidContractTx(txInfo) }
+      })
+    )
+
+    const filteredTxs = enrichedTxs
+      .filter(Boolean)
+      .filter(tx => !tx.token || tx.isValidTransfer)
       .slice(0, maxRecords)
 
-    return reply.send(this._result(id, parsedTxs))
-  }
-
-  /**
-   * Retrieves transactions for a specific address within a block range.
-   *
-   * @param {Object} req - Request object with query parameters.
-   * @param {Object} reply - Reply object for sending the response.
-   * @description
-   * Searches for transactions involving a given address within specified blocks.
-   * Collects transactions where the address is sender or recipient, up to a maximum count.
-   * Uses tronweb for blockchain interaction.
-   */
-  async #getContractTransactionsByAddress (req, reply) {
-    const query = req.body.param.pop()
-    const id = req.body.id
-    const maxRecords = query.pageSize || 100
-
-    const blockNumbers = await this.#getBlockRangeFromQueryParams(query)
-    if (!blockNumbers) {
-      return reply.send(this._error(id, 'invalid query params [fromBlock, toBlock]'))
-    }
-
-    const txs = await Promise.all(blockNumbers.map(bn => this.#getBlockTransactions(bn)))
-    const parsedTxs = await this.#processContractTxs(txs.flat())
-
-    const filteredTxt = parsedTxs
-      .filter(tx => tx.token === query.token_address)
-      .filter(tx => [tx.from.toLowerCase(), tx.to.toLowerCase()].includes(query.address.toLowerCase()))
-      .slice(0, maxRecords)
-
-    return reply.send(this._result(id, filteredTxt))
+    return reply.send(this._result(id, filteredTxs))
   }
 
   /**
