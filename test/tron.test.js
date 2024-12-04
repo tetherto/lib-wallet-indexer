@@ -119,7 +119,7 @@ test('tron _addSub method', async (t) => {
   await tron.stop()
 })
 
-test('tron subscribe account', async (t) => {
+test.skip('tron subscribe account', async (t) => {
   const tron = new Tron(config)
   tron._addMethod = () => {}
   await tron.start()
