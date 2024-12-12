@@ -7,8 +7,10 @@
     "lint": "standard --fix",
     "test:ankr": "brittle ./test/ankr.test.js",
     "test:proxy": "brittle ./test/proxy.test.js",
+    "test:tron": "brittle ./test/tron.test.js",
     "start-hardhat": "node index.js hardhat",
-    "start-ankr": "node index.js ankr"
+    "start-ankr": "node index.js ankr",
+    "start-tron": "node index.js tron"
   },
   "author": "rbndg",
   "license": "MIT",
@@ -19,10 +21,14 @@
     "bignumber.js": "^9.1.2",
     "fastify": "^4.28.0",
     "web3": "^4.10.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "tronweb": "6.0.0"
   },
   "devDependencies": {
     "brittle": "^3.5.2",
     "standard": "^17.1.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
