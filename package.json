@@ -17,6 +17,8 @@
   "dependencies": {
     "@ankr.com/ankr.js": "^0.5.2",
     "@fastify/cors": "^9.0.1",
+    "@solana/web3.js": "^1.95.4",
+    "bignumber.js": "^9.1.2",
     "fastify": "^4.28.0",
     "web3": "^4.10.0",
     "ws": "^8.18.0",

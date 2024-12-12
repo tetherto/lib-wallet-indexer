@@ -3,7 +3,8 @@ const config = require('./config.json')
 const servers = {
   hardhat: require('./src/hardhat.js'),
   ankr: require('./src/ankr.js'),
-  tron: require('./src/tron.js')
+  tron: require('./src/tron.js'),
+  solana: require('./src/solana.js'),
 }
 async function main () {
   const servName = process.argv[2]?.toLowerCase()
