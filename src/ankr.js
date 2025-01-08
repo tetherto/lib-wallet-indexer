@@ -79,6 +79,11 @@ class Ankr extends BaseServer {
       method: 'getTransactionsByAddress',
       handler: this._getTransactionsByAddress.bind(this)
     })
+
+    this._addMethod({
+      method: 'getTokenTransfers',
+      handler: this._getTokenTransfers.bind(this)
+    })
   }
 
   async _apiStatus (req, reply) {
@@ -242,6 +247,46 @@ class Ankr extends BaseServer {
       e.gasUsed = Number.parseInt(e.gasUsed)
       e.timestamp = Number.parseInt(e.timestamp)
       e.gasPrice = Number.parseInt(e.gasPrice)
+      return e
+    })
+    reply.send(this._result(id, fmt))
+  }
+
+  /**
+   * Retrieves token transfers for a specific Ethereum address within a block range.
+   *
+   * @param {Object} req - Request object with query parameters.
+   * @param {Object} reply - Reply object for sending the response.
+   * @description
+   * Searches for token transfers involving a given address within specified blocks.
+   * Collects token transfers where the address is sender or recipient, up to a maximum count.
+   * Uses Web3.js for blockchain interaction.
+   */
+  async _getTokenTransfers (req, reply) {
+    const eth = this.web3.eth
+    const query = req.body.param.pop()
+    const id = req.body.id
+    const pageSize = query.pageSize || 101
+    const fromBlock = query.fromBlock || 0
+    const toBlock = query.toBlock || Number(await eth.getBlockNumber())
+    const addr = query.address
+    let res
+    try {
+      res = await this._ankr.getTokenTransfers({
+        blockchain: this.chain,
+        fromBlock,
+        toBlock,
+        address: [addr],
+        pageSize,
+        descOrder: true
+      })
+    } catch (err) {
+      console.log(err)
+      return reply.send(this._error(id, 'failed to get token transfer history'))
+    }
+    const fmt = res.transfers.map((e) => {
+      e.value = Number.parseInt(e.value || 0)
+
       return e
     })
     reply.send(this._result(id, fmt))
