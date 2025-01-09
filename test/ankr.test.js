@@ -100,7 +100,7 @@ test('Ankr _addSub method', async (t) => {
 })
 
 test('Ankr methods', async (t) => {
-  t.plan(11)
+  t.plan(13)
 
   const ankr = new Ankr(config)
   await ankr.start()
@@ -127,10 +127,9 @@ test('Ankr methods', async (t) => {
 
   req.body.param = [{
     address: '0x52b572e36db2d6e07f3d07a88f50695781dafa98'
-  }
-  ]
+  }]
 
-  ankr._getTransactionsByAddress(req, {
+  await ankr._getTransactionsByAddress(req, {
     ...res,
     test: function (res) {
       const result = res.result
@@ -141,6 +140,20 @@ test('Ankr methods', async (t) => {
       t.ok(Number.isInteger(tx.gasPrice), 'gasPrice is integer')
       t.ok(Number.isInteger(tx.gas), 'gas is integer')
       t.ok(Number.isInteger(tx.timestamp), 'timestamp is integer')
+    }
+  })
+
+  req.body.param = [{
+    address: '0x52b572e36db2d6e07f3d07a88f50695781dafa98'
+  }]
+
+  await ankr._getTokenTransfers(req, {
+    ...res,
+    test: function (res) {
+      const result = res.result
+      const tokenTransfer = result[0]
+      t.ok(result.length > 0, 'returns many token transfers')
+      t.ok(Number.isInteger(tokenTransfer.value), 'value is integer')
     }
   })
 
