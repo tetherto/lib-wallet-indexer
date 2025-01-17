@@ -264,32 +264,47 @@ class Ankr extends BaseServer {
    */
   async _getTokenTransfers (req, reply) {
     const eth = this.web3.eth
-    const query = req.body.param.pop()
-    const id = req.body.id
-    const pageSize = query.pageSize || 101
-    const fromBlock = query.fromBlock || 0
-    const toBlock = query.toBlock || Number(await eth.getBlockNumber())
-    const addr = query.address
-    let res
-    try {
-      res = await this._ankr.getTokenTransfers({
-        blockchain: this.chain,
-        fromBlock,
-        toBlock,
-        address: [addr],
-        pageSize,
-        descOrder: true
-      })
-    } catch (err) {
-      console.log(err)
-      return reply.send(this._error(id, 'failed to get token transfer history'))
-    }
-    const fmt = res.transfers.map((e) => {
-      e.value = Number.parseInt(e.value || 0)
 
-      return e
+    const id = req.body.id
+    const query = req.body.param.pop()
+    const { fromAddress, toAddress, contractAddress, fromBlock, toBlock } = query
+
+    let logs = [],
+        pageToken
+
+    do {
+      const r = await this._ankr.getLogs({
+        blockchain: this.chain,
+        address: [ contractAddress ],
+        pageSize: 10_000,
+        fromBlock: fromBlock || 0,
+        toBlock: toBlock || await eth.getBlockNumber(),
+        decodeLogs: true,
+        descOrder: true,
+        topics: [
+          TOPIC_SIG,
+          fromAddress ? Web3.utils.padLeft(fromAddress, 64) : null,
+          toAddress ? Web3.utils.padLeft(toAddress, 64) : null
+        ],
+        pageToken
+      })
+
+      logs = logs.concat(r.logs)
+
+      pageToken = r.nextPageToken
+    } while (pageToken)
+
+    const transfers = logs.map(log => {
+      return {
+        txid: log.transactionHash,
+        height: log.blockNumber,
+        from: log.event.inputs[0].valueDecoded.toLowerCase(),
+        to: log.event.inputs[1].valueDecoded.toLowerCase(),
+        value: Number.parseInt(log.event.inputs[2].valueDecoded)
+      }
     })
-    reply.send(this._result(id, fmt))
+
+    reply.send(this._result(id, transfers))
   }
 
   /**

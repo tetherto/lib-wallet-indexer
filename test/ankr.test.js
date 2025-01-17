@@ -144,7 +144,8 @@ test('Ankr methods', async (t) => {
   })
 
   req.body.param = [{
-    address: '0x52b572e36db2d6e07f3d07a88f50695781dafa98'
+    fromAddress: '0xa6EBD7CbdC447c7429a9cC7F78110373F0Aa0804',
+    contractAddress: '0xbF43558373B4ED1E024186F18f611c0e209d1cEC'
   }]
 
   await ankr._getTokenTransfers(req, {
