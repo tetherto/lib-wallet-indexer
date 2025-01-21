@@ -79,6 +79,11 @@ class Ankr extends BaseServer {
       method: 'getTransactionsByAddress',
       handler: this._getTransactionsByAddress.bind(this)
     })
+
+    this._addMethod({
+      method: 'getTokenTransfers',
+      handler: this._getTokenTransfers.bind(this)
+    })
   }
 
   async _apiStatus (req, reply) {
@@ -245,6 +250,61 @@ class Ankr extends BaseServer {
       return e
     })
     reply.send(this._result(id, fmt))
+  }
+
+  /**
+   * Retrieves token transfers for a specific Ethereum address within a block range.
+   *
+   * @param {Object} req - Request object with query parameters.
+   * @param {Object} reply - Reply object for sending the response.
+   * @description
+   * Searches for token transfers involving a given address within specified blocks.
+   * Collects token transfers where the address is sender or recipient, up to a maximum count.
+   * Uses Web3.js for blockchain interaction.
+   */
+  async _getTokenTransfers (req, reply) {
+    const eth = this.web3.eth
+
+    const id = req.body.id
+    const query = req.body.param.pop()
+    const { fromAddress, toAddress, contractAddress, fromBlock, toBlock } = query
+
+    let logs = [],
+        pageToken
+
+    do {
+      const r = await this._ankr.getLogs({
+        blockchain: this.chain,
+        address: [ contractAddress ],
+        pageSize: 10_000,
+        fromBlock: fromBlock || 0,
+        toBlock: toBlock || await eth.getBlockNumber(),
+        decodeLogs: true,
+        descOrder: true,
+        topics: [
+          TOPIC_SIG,
+          fromAddress ? Web3.utils.padLeft(fromAddress, 64) : null,
+          toAddress ? Web3.utils.padLeft(toAddress, 64) : null
+        ],
+        pageToken
+      })
+
+      logs = logs.concat(r.logs)
+
+      pageToken = r.nextPageToken
+    } while (pageToken)
+
+    const transfers = logs.map(log => {
+      return {
+        txid: log.transactionHash,
+        height: log.blockNumber,
+        from: log.event.inputs[0].valueDecoded.toLowerCase(),
+        to: log.event.inputs[1].valueDecoded.toLowerCase(),
+        value: Number.parseInt(log.event.inputs[2].valueDecoded)
+      }
+    })
+
+    reply.send(this._result(id, transfers))
   }
 
   /**

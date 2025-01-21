@@ -7,6 +7,8 @@ indexer service for Ethereum with JSON-RPC and Websocket api
 ### JSON-RPC
 **getTransactionsByAddress:** Get ETH transactions by address.
 
+**getTokenTransfers:** Get ETH token transfers by address (only ankr).
+
 
 ### WebSocket:
 **subscribeToAccount:** Websocket events for new ERC20 token and ETH transfers for an address.

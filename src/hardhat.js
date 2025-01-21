@@ -7,6 +7,31 @@ const EVENTS = {
 
 const TOPIC_SIG = Web3.utils.sha3('Transfer(address,address,uint256)')
 
+const TRANSFER_ABI = [
+  {
+    "anonymous": false,
+    "inputs": [
+        {
+            "indexed": true,
+            "name": "from",
+            "type": "address"
+        },
+        {
+            "indexed": true,
+            "name": "to",
+            "type": "address"
+        },
+        {
+            "indexed": false,
+            "name": "value",
+            "type": "uint256"
+        }
+    ],
+    "name": "Transfer",
+    "type": "event"
+  }
+]
+
 class Hardhat extends BaseServer {
   constructor (config = {}) {
     super(config)
@@ -44,6 +69,11 @@ class Hardhat extends BaseServer {
     this._addMethod({
       method: 'getTransactionsByAddress',
       handler: this._getTransactionsByAddress.bind(this)
+    })
+
+    this._addMethod({
+      method: 'getTokenTransfers',
+      handler: this._getTokenTransfers.bind(this)
     })
   }
 
@@ -174,7 +204,7 @@ class Hardhat extends BaseServer {
    * @description
    * Searches for transactions involving a given address within specified blocks.
    * Collects transactions where the address is sender or recipient, up to a maximum count.
-   * Uses Web3.js for blockchain interaction.
+   * Uses local node for blockchain interaction.
    */
   async _getTransactionsByAddress (req, reply) {
     const eth = this.web3.eth
@@ -199,6 +229,44 @@ class Hardhat extends BaseServer {
       }
     }
     return reply.send(this._result(id, data))
+  }
+
+  /**
+   * Retrieves token transfers for a specific Ethereum address within a block range.
+   *
+   * @param {Object} req - Request object with query parameters.
+   * @param {Object} reply - Reply object for sending the response.
+   * @description
+   * Searches for token transfers involving a given address within specified blocks.
+   * Collects token transfers where the address is sender or recipient, up to a maximum count.
+   * Uses local node for blockchain interaction.
+   */
+  async _getTokenTransfers (req, reply) {
+    const eth = this.web3.eth
+
+    const id = req.body.id
+    const query = req.body.param.pop()
+    const { fromBlock, toBlock, contractAddress, fromAddress, toAddress } = query
+
+    const contract = new eth.Contract(TRANSFER_ABI, contractAddress)
+
+    const rawEvents = await contract.getPastEvents("Transfer", {
+      filter: { from: fromAddress, to: toAddress },
+      fromBlock: fromBlock || 0,
+      toBlock: toBlock || await eth.getBlockNumber()
+    })
+
+    const events = rawEvents.map((e) => {
+      return {
+        txid: e.transactionHash,
+        height: e.blockNumber.toString(),
+        from: e.returnValues._from.toLowerCase(),
+        to: e.returnValues._to.toLowerCase(),
+        value: e.returnValues._value.toString()
+      }
+    })
+
+    reply.send(this._result(id, events))
   }
 
   /**
