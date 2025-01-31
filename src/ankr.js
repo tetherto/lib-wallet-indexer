@@ -294,15 +294,21 @@ class Ankr extends BaseServer {
       pageToken = r.nextPageToken
     } while (pageToken)
 
-    const transfers = logs.map(log => {
-      return {
+    const transfers = []
+
+    for (const log of logs) {
+      const tx = await this.web3.eth.getTransaction(log.transactionHash)
+
+      transfers.push({
         txid: log.transactionHash,
         height: log.blockNumber,
         from: log.event.inputs[0].valueDecoded.toLowerCase(),
         to: log.event.inputs[1].valueDecoded.toLowerCase(),
+        gas: Number(tx.gas),
+        gasPrice: Number(tx.gasPrice),
         value: Number.parseInt(log.event.inputs[2].valueDecoded)
-      }
-    })
+      })
+    }
 
     reply.send(this._result(id, transfers))
   }
