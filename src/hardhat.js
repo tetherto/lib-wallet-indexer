@@ -256,17 +256,23 @@ class Hardhat extends BaseServer {
       toBlock: toBlock || await eth.getBlockNumber()
     })
 
-    const events = rawEvents.map((e) => {
-      return {
-        txid: e.transactionHash,
-        height: e.blockNumber.toString(),
-        from: e.returnValues._from.toLowerCase(),
-        to: e.returnValues._to.toLowerCase(),
-        value: e.returnValues._value.toString()
-      }
-    })
+    const transfers = []
 
-    reply.send(this._result(id, events))
+    for (const event of rawEvents) {
+      const tx = await this.web3.eth.getTransaction(event.transactionHash)
+
+      transfers.push({
+        txid: event.transactionHash,
+        height: event.blockNumber.toString(),
+        from: event.returnValues._from.toLowerCase(),
+        to: event.returnValues._to.toLowerCase(),
+        gas: Number(tx.gas),
+        gasPrice: Number(tx.gasPrice),
+        value: event.returnValues._value.toString()
+      })
+    }
+    
+    reply.send(this._result(id, transfers))
   }
 
   /**
