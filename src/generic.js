@@ -145,13 +145,23 @@ class Generic extends BaseServer {
           return
         }
 
-        const txs = await this._getHeightTxs(height)
+        const txs = await this._getHeightTxs(height).catch(err => {
+          // Skip this height due to error
+          console.trace(`Could not retrieve height ${height}`, err)
+          return []
+        })
+
+        console.log(`Processing ${txs.length} txs for height ${height}`)
         for (const sub of subs) {
           for (const [addr] of sub.event) {
-            const normalizedAddr = this._normalizeAddress(addr)
             for (const tx of txs) {
-              if (tx.from !== normalizedAddr && tx.to !== normalizedAddr) continue
-              sub.send(EVENTS.SUB_ACCOUNT, { tx, addr })
+              const { addrSet, normalizedAddrSet } = await this._getAddrSetsForComparison(tx, addr)
+              if (!this._isTxForAddress(tx, addrSet, normalizedAddrSet)) continue
+              sub.send(EVENTS.SUB_ACCOUNT, {
+                tx,
+                addr,
+                token: tx.token
+              })
             }
           }
         }
@@ -162,6 +172,30 @@ class Generic extends BaseServer {
     }
   }
 
+  /**
+   * @param {any} tx
+   * @param {string} addr
+   */
+  async _getAddrSetsForComparison (tx, addr) {
+    const addrSet = new Set(addr)
+    const normalizedAddrSet = new Set(this._normalizeAddress(addr))
+    return { addrSet, normalizedAddrSet }
+  }
+
+  /**
+   * @param {any} tx
+   * @param {Set<string>} address
+   * @param {Set<string>} normalizedAddress
+   * @returns
+   */
+  _isTxForAddress (tx, address, normalizedAddress) {
+    return normalizedAddress.has(tx.from) || normalizedAddress.has(tx.to)
+  }
+
+  /**
+   * @param {string} address
+   * @returns {string}
+   */
   _normalizeAddress (address) {
     return address
   }
@@ -171,6 +205,7 @@ class Generic extends BaseServer {
     contracts.forEach((addr) => {
       if (this._contractLogSubs.includes(addr)) return
       this._subToContract(addr)
+      this._contractLogSubs.push(addr)
     })
   }
 
@@ -195,7 +230,7 @@ class Generic extends BaseServer {
    **/
   async _wsSubscribeAccount (req) {
     let address = req?.params[0]
-    let tokens = req?.params[1] || []
+    const tokens = req?.params[1] || []
     const evName = EVENTS.SUB_ACCOUNT
     if (!address) return req.error('account not sent')
     if (this._subs.size >= this._MAX_SUB_SIZE) {
@@ -204,8 +239,11 @@ class Generic extends BaseServer {
     }
 
     address = this._normalizeAddress(address)
-    tokens = tokens.map(str => str.toLowerCase())
     const cidSubs = this._getCidSubs(req.cid, evName) ?? []
+
+    const acctExists = cidSubs.filter((sub) => sub[0] === address).length > 0
+    if (acctExists) return req.error(evName, 'already subscribed to address')
+
     cidSubs.push([address, tokens])
 
     this._subscribeToLogs(tokens)
