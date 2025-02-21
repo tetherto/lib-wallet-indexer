@@ -159,7 +159,8 @@ class Tron extends BaseServer {
             if (![tx.from.toLowerCase(), tx.to.toLowerCase()].includes(addr.toLowerCase())) return
 
             const pld = {
-              tx: { ...tx, addr }
+              tx,
+              addr,
             }
 
             if (tx.token && (tokens || []).includes(tx.token)) {
