@@ -26,7 +26,7 @@ class Solana extends Generic {
   constructor (config = {}) {
     super(config)
 
-    this.client = new Connection(config.provider ?? 'https://api.mainnet-beta.solana.com')
+    this.client = new Connection(config.solana_api ?? 'https://api.mainnet-beta.solana.com')
   }
 
   async _getHeight () {
