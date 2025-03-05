@@ -10,6 +10,7 @@
     "test:tron": "brittle ./test/tron.test.js",
     "start-hardhat": "node index.js hardhat",
     "start-ankr": "node index.js ankr",
+    "start-toncenter": "node index.js toncenter",
     "start-tron": "node index.js tron"
   },
   "author": "rbndg",
