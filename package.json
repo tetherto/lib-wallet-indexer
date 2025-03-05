@@ -8,9 +8,11 @@
     "test:ankr": "brittle ./test/ankr.test.js",
     "test:proxy": "brittle ./test/proxy.test.js",
     "test:tron": "brittle ./test/tron.test.js",
+    "test:solana": "brittle ./test/solana.test.js",
     "start-hardhat": "node index.js hardhat",
     "start-ankr": "node index.js ankr",
-    "start-tron": "node index.js tron"
+    "start-tron": "node index.js tron",
+    "start-solana": "node index.js solana"
   },
   "author": "rbndg",
   "license": "MIT",
