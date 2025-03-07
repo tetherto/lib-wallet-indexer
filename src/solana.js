@@ -26,7 +26,7 @@ class Solana extends Generic {
   constructor (config = {}) {
     super(config)
 
-    this.client = new Connection(config.provider ?? 'https://api.mainnet-beta.solana.com')
+    this.client = new Connection(config.solana_api ?? 'https://api.mainnet-beta.solana.com')
   }
 
   async _getHeight () {
@@ -40,29 +40,38 @@ class Solana extends Generic {
    * @param {Object} req - Request object with query parameters.
    * @param {Object} reply - Reply object for sending the response.
    */
-  async _getTransactionsByAddress (req, reply) {
+  
+  async _getTransactionsByAddress(req, reply) {
+    // TODO: add support for pagination
     const id = req.body.id
     const query = req.body.param.pop()
     const addr = query.address
-
-    // TODO: add support for pagination
-    const signatures = await this.client.getSignaturesForAddress(new PublicKey(addr), { limit: 100 })
-
+    const fromBlock = query.fromBlock
+    const toBlock = query.toBlock
+  
+    let signatures = await this.client.getSignaturesForAddress(new PublicKey(addr), { limit: 1000 })
+  
     // Iterate over all associated token accounts for all registered tokens
     for (const token of this._getTokens()) {
       try {
         const ata = await getAssociatedTokenAddress(new PublicKey(token), new PublicKey(addr))
-        // TODO: add support for pagination
-        const sigs = await this.client.getSignaturesForAddress(ata, { limit: 100 })
-        signatures.push(...sigs)
+        const tokenSignatures = await this.client.getSignaturesForAddress(ata, { limit: 1000 })
+        signatures.push(...tokenSignatures)
       } catch (err) {
         console.log(err)
         continue
       }
     }
+  
+    // Filter signatures by slot range if fromBlock and toBlock are provided
+    if (fromBlock !== undefined && toBlock !== undefined) {
+      signatures = signatures.filter(sig => sig.slot >= fromBlock && sig.slot <= toBlock)
+    }
+  
+    // Fetch and parse transactions
     const txs = await Promise.all(signatures.map(tx => this.client.getParsedTransaction(tx.signature)))
     const ret = await Promise.all(txs.map(tx => this._parseTx(tx, tx?.slot)))
-
+  
     reply.send(this._result(id, ret.flat()))
   }
 
