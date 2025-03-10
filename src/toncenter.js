@@ -132,14 +132,9 @@ class TonCenter extends Generic {
   }
 
   /**
-   * Retrieves transactions for a specific Ethereum address within a block range.
-   *
+   * Retrieves transactions for a specific address.
    * @param {Object} req - Request object with query parameters.
    * @param {Object} reply - Reply object for sending the response.
-   * @description
-   * Searches for transactions involving a given address within specified blocks.
-   * Collects transactions where the address is sender or recipient, up to a maximum count.
-   * Uses Web3.js for blockchain interaction.
    */
   async _getTransactionsByAddress (req, reply) {
     const id = req.body.id
