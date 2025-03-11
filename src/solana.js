@@ -67,9 +67,9 @@ class Solana extends Generic {
     if (fromBlock !== undefined && toBlock !== undefined) {
       signatures = signatures.filter(sig => sig.slot >= fromBlock && sig.slot <= toBlock)
     }
-  
+
     // Fetch and parse transactions
-    const txs = await Promise.all(signatures.map(tx => this.client.getParsedTransaction(tx.signature)))
+    const txs = await Promise.all(signatures.map(tx => this.client.getParsedTransaction(tx.signature, { maxSupportedTransactionVersion: 0 })))
     const ret = await Promise.all(txs.map(tx => this._parseTx(tx, tx?.slot)))
   
     reply.send(this._result(id, ret.flat()))
