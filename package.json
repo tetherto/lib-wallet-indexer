@@ -10,7 +10,9 @@
     "test:tron": "brittle ./test/tron.test.js",
     "start-hardhat": "node index.js hardhat",
     "start-ankr": "node index.js ankr",
-    "start-tron": "node index.js tron"
+    "start-tron": "node index.js tron",
+    "start-toncenter": "node index.js toncenter",
+    "start-solana": "node index.js solana"
   },
   "author": "rbndg",
   "license": "MIT",
