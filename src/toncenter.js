@@ -35,7 +35,8 @@ class TonCenter extends Generic {
       headers['X-API-Key'] = this._indexerApiKey
     }
 
-    const response = await fetch(`${this._indexerUri}/${method}?${querystring.stringify(params)}`, {
+    const url = `${this._indexerUri}/${method}?${querystring.stringify(params)}`
+    const response = await fetch(url, {
       method: 'GET',
       headers
     })
@@ -80,6 +81,7 @@ class TonCenter extends Generic {
       })
 
       const items = await getItemsFn(res)
+      
       ret.push(...await processFn(items))
 
       if (items.length < limit) {
@@ -115,7 +117,17 @@ class TonCenter extends Generic {
       hash: this._normalizeTxHash(hash),
       from: this._normalizeAddress(from),
       to: this._normalizeAddress(to),
-      value: tx.in_msg.value,
+      value: Number(tx.in_msg.value),
+      blockNumber: height
+    }
+  }
+
+  async _parseTokenTransfer (transfer, height) {
+    return {
+      hash: this._normalizeTxHash(transfer.transaction_hash),
+      from: this._normalizeAddress(transfer.source),
+      to: this._normalizeAddress(transfer.destination),
+      value: Number(transfer.amount),
       blockNumber: height
     }
   }
@@ -128,18 +140,17 @@ class TonCenter extends Generic {
   }
 
   _normalizeAddress (address) {
-    return new TonUtils.Address(address).toString(true, true, true)
+    return new TonUtils.Address(address).toString(true, true, false)
   }
 
   /**
-   * Retrieves transactions for a specific Ethereum address within a block range.
+   * Retrieves transactions for a specific Ton address within a block range.
    *
    * @param {Object} req - Request object with query parameters.
    * @param {Object} reply - Reply object for sending the response.
    * @description
    * Searches for transactions involving a given address within specified blocks.
    * Collects transactions where the address is sender or recipient, up to a maximum count.
-   * Uses Web3.js for blockchain interaction.
    */
   async _getTransactionsByAddress (req, reply) {
     const id = req.body.id
@@ -154,6 +165,31 @@ class TonCenter extends Generic {
     )
 
     reply.send(this._result(id, txs.filter(Boolean)))
+  }
+
+  /**
+   * Retrieves transactions for a specific Ton address within a block range.
+   *
+   * @param {Object} req - Request object with query parameters.
+   * @param {Object} reply - Reply object for sending the response.
+   * @description
+   * Searches for transactions involving a given address within specified blocks.
+   * Collects transactions where the address is sender or recipient, up to a maximum count.
+   */
+  async _getTokenTransfers (req, reply) {
+    const id = req.body.id
+    const query = req.body.param.pop()
+    const addr = query.address
+    const jettonMaster = query.jettonMaster
+
+    const transfers = await this._paginateIndexerCall(
+      'jetton/transfers',
+      { owner_address: [addr], jetton_master: jettonMaster },
+      res => res?.jetton_transfers ?? [],
+      transfers => Promise.all(transfers.map(transfer => this._parseTokenTransfer(transfer, transfer.mc_block_seqno)))
+    )
+
+    reply.send(this._result(id, transfers.filter(Boolean)))
   }
 }
 
