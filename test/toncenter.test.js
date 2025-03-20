@@ -102,4 +102,45 @@ test('Toncenter methods', async (t) => {
       t.ok(Number.isInteger(tokenTransfer.value), 'value is integer')
     }
   })
+
+  req.body.param = [{
+    jettonMaster: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs'
+  }]
+
+  await toncenter._getAllTokenTransfers(req, {
+    ...res,
+    test: function (res) {
+      const result = res.result
+      const tokenTransfer = result[0]
+      t.ok(result.length > 0, 'returns many token transfers')
+      t.ok(Number.isInteger(tokenTransfer.value), 'value is integer')
+    }
+  })
+
+  await toncenter._wsSubscribeAccount({
+    ...req,
+    params: [
+      'UQAqxtYFXRbVRjo1GQbGVtJCoifxIRPWeiCa_rTf93uxuBtz',
+      ['EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs']
+    ],
+    send: function (ev, data) {
+      t.ok(ev === 'subscribeAccount', 'event name is correct')
+      console.log(data)
+      t.ok(data.addr === 'UQAqxtYFXRbVRjo1GQbGVtJCoifxIRPWeiCa_rTf93uxuBtz', 'addr is correct')
+      t.ok(data.token === 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs', 'token is correct')
+    }
+  })
+
+  await toncenter._wsSubscribeAccount({
+    ...req,
+    params: [
+      'UQCl65pBKVl2yZ9DaIL3uavPhWITgYGne1P6r0CPzXw_7XD-',
+      ['EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs']
+    ],
+    send: function (ev, data) {
+      t.ok(ev === 'subscribeAccount', 'event name is correct')
+      t.ok(data.addr === 'UQCl65pBKVl2yZ9DaIL3uavPhWITgYGne1P6r0CPzXw_7XD', 'addr is correct')
+      t.ok(data.token === 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs', 'token is correct')
+    }
+  })
 })

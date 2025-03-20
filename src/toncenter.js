@@ -17,9 +17,14 @@ const Generic = require('./generic')
 const querystring = require('querystring')
 /** @type import('tonweb').default */
 const TonWeb = require('tonweb')
+const { Address } = require('tonweb')
 const TonUtils = TonWeb.utils
 
 const PAGINATION_LIMIT = 250
+
+const EVENTS = {
+  SUB_ACCOUNT: 'subscribeAccount'
+}
 
 class TonCenter extends Generic {
   constructor (config = {}) {
@@ -27,6 +32,8 @@ class TonCenter extends Generic {
 
     this._indexerUri = config?.indexerUri ?? 'https://toncenter.com/api/v3'
     this._indexerApiKey = config?.indexerApiKey ?? ''
+    this.lastSyncTimestamp = Math.floor(Date.now() / 1000) - 60
+    this.activeSubs = {}
   }
 
   async _callIndexer (method, params = {}) {
@@ -115,20 +122,20 @@ class TonCenter extends Generic {
 
     return {
       hash: this._normalizeTxHash(hash),
-      from: this._normalizeAddress(from),
-      to: this._normalizeAddress(to),
+      from: this._normalizeAddress(from, false),
+      to: this._normalizeAddress(to, false),
       value: Number(tx.in_msg.value),
       blockNumber: height
     }
   }
 
-  async _parseTokenTransfer (transfer, height) {
+  async _parseTokenTransfer (transfer) {
     return {
       hash: this._normalizeTxHash(transfer.transaction_hash),
-      from: this._normalizeAddress(transfer.source),
-      to: this._normalizeAddress(transfer.destination),
+      from: this._normalizeAddress(transfer.source, false),
+      to: this._normalizeAddress(transfer.destination, false),
       value: Number(transfer.amount),
-      blockNumber: height
+      timestamp: transfer.transaction_now
     }
   }
 
@@ -139,8 +146,8 @@ class TonCenter extends Generic {
       .replace(/_/g, '/')
   }
 
-  _normalizeAddress (address) {
-    return new TonUtils.Address(address).toString(true, true, false)
+  _normalizeAddress (address, isContract) {
+    return new Address(address).toString({bounceable: isContract, testOnly: false})
   }
 
   /**
@@ -190,6 +197,147 @@ class TonCenter extends Generic {
     )
 
     reply.send(this._result(id, transfers.filter(Boolean)))
+  }
+
+  /**
+   * Retrieves transactions for a specific Ton address since last timestamp.
+   *
+   * @param {Object} req - Request object with query parameters.
+   * @param {Object} reply - Reply object for sending the response.
+   * @description
+   * Collects transactions where the token sent is jettonMaster
+   */
+  async _getAllTokenTransfers (req, reply) {
+    const id = req.body.id
+    const query = req.body.param.pop()
+    const jettonMaster = query.jettonMaster
+
+    const transfers = await this._paginateIndexerCall(
+      'jetton/transfers',
+      { jetton_master: jettonMaster, start_utime: this.lastSyncTimestamp },
+      res => res?.jetton_transfers ?? [],
+      transfers => Promise.all(transfers.map(transfer => this._parseTokenTransfer(transfer)))
+    )
+
+    reply.send(this._result(id, transfers.filter(Boolean)))
+  }
+
+  /**
+  * @description subscribe to account and tokens for a user
+  **/
+  async _wsSubscribeAccount (req) {
+    let account = req?.params[0]
+    let tokens = req?.params[1] || []
+    const evName = EVENTS.SUB_ACCOUNT
+    if (!account) return req.error(evName, 'account not sent')
+    if (this._subs.size >= this._MAX_SUB_SIZE) {
+      console.log('reached max number of subscriptions')
+      return req.error(evName, 'server is not available')
+    }
+    console.log(account)
+    if (!await this._isAccount(account)) {
+      return req.error(evName, 'not an ton account')
+    }
+    if (await this._isAccount(tokens)) {
+      return req.error(evName, 'not an ton contract')
+    }
+    account = this._normalizeAddress(account, false)
+    tokens = tokens.map((token) => this._normalizeAddress(token, true))
+    let cidSubs = this._getCidSubs(req.cid, evName)
+    if (!cidSubs) {
+      cidSubs = []
+    }
+
+    const acctExists = cidSubs.filter((sub) => sub[0] === account).length > 0
+    if (acctExists) return req.error(evName, 'already subscribed to address')
+
+    cidSubs.push([account, tokens])
+
+    this._subscribeToLogs(tokens)
+    console.log(`New sub: acct: ${account} - tokens ${tokens}`)
+
+    this._addSub({
+      send: req.send,
+      error: req.error,
+      evName,
+      param: cidSubs,
+      cid: req.cid
+    })
+  }
+
+  /**
+   * @description process contract event and send data to client
+   **/
+  _emitContractEvent (contract, decoded) {
+    const filter = this._getEventSubs(EVENTS.SUB_ACCOUNT)
+    filter.forEach((sub) => {
+      sub.event.forEach(([addr, tokens]) => {
+        if (!tokens.includes(contract)) return
+        if (this._normalizeAddress(decoded.from) !== addr && this._normalizeAddress(decoded.to) !== addr) return
+
+        sub.send(EVENTS.SUB_ACCOUNT, {
+          addr,
+          token: contract,
+          tx: {
+            height: decoded.timestamp,
+            hash: decoded.hash,
+            from: decoded.from,
+            to: decoded.to,
+            value: decoded.value && decoded.value.toString()
+          }
+        })
+      })
+    })
+  }
+
+  /**
+   * @description Listen to token  events, and send message to user when detected relevant tx
+  **/
+  async _subToContract (contract) {
+    console.log('New subscription to ', contract)
+
+    const reply = {
+      send: function (data) {
+        const results = JSON.parse(data)['result']
+
+        results.map(res => this._emitContractEvent(contract, res))
+      }.bind(this)
+    }
+
+    const intervalMs = 5000;
+
+    // Store the interval ID using the contract address as the key
+    this.activeSubs[contract] = setInterval(async () => {
+      console.log('Calling _getAllTokenTransfers for', contract);
+
+      const req = {
+        body: {
+          param: [{
+            jettonMaster: new TonUtils.Address(contract).toString()
+          }]
+        }
+      }
+      await this._getAllTokenTransfers(req, reply);
+    }, intervalMs);
+  }
+  
+  _unsubscribeFromContract (contract) {
+    if (this.contractIntervals[contract]) {
+      clearInterval(this.contractIntervals[contract]);
+      delete this.contractIntervals[contract]; // Remove the entry from the object
+      console.log(`Subscription stopped for ${contract}.`);
+    } else {
+      console.log(`No active subscription found for ${contract}.`);
+    }
+  }
+
+  /**
+  * @description check if an address is a valid ton unbounceable account
+  * @param {String} addr ton address
+  * @returns {Promise<Boolean>}
+  */
+  async _isAccount (addr) {
+    return TonUtils.Address.isValid(addr)
   }
 }
 
