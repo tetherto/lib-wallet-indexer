@@ -17,21 +17,37 @@ const BN = require('bignumber.js')
 const Generic = require('./generic')
 const { Connection, PublicKey } = require('@solana/web3.js')
 const { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress } = require('@solana/spl-token')
+const Bitquery = require('./bitquery')
 
 const EVENTS = {
   SUB_ACCOUNT: 'subscribeAccount'
 }
 
 class Solana extends Generic {
-  constructor (config = {}) {
+  constructor(config = {}) {
     super(config)
 
+    this.bitquery = new Bitquery(config)
     this.client = new Connection(config.solana_api ?? 'https://api.mainnet-beta.solana.com')
   }
 
-  async _getHeight () {
+  async _getHeight() {
     const height = await this.client.getSlot()
     return height
+  }
+
+  toBaseUnit(amount, decimals) {
+    if (typeof amount !== 'string' && typeof amount !== 'number') {
+      throw new Error('Amount must be a string or number');
+    }
+
+    const baseAmount = new BN(amount).times(new BN(10).pow(decimals));
+
+    if (!baseAmount.isInteger()) {
+      throw new Error(`Conversion results in a non-integer value: ${baseAmount.toString()}`);
+    }
+
+    return baseAmount;
   }
 
   /**
@@ -68,26 +84,28 @@ class Solana extends Generic {
       signatures = signatures.filter(sig => sig.slot >= fromBlock && sig.slot <= toBlock)
     }
 
-    // Fetch and parse transactions
-    const txs = await Promise.all(signatures.map(tx => this.client.getParsedTransaction(tx.signature, { maxSupportedTransactionVersion: 0 })))
-    const ret = await Promise.all(txs.map(tx => this._parseTx(tx, tx?.slot)))
+    const { asReceiver, asSender } = await this.bitquery.getTransfers([addr], signatures.map(s => s.signature))
+    const transfers = [...asReceiver, ...asSender].map(({ block, transaction, receiver, sender, amount, currency }) => {
+      return {
+        hash: transaction.signature,
+        from: sender.address,
+        to: receiver.address,
+        value: this.toBaseUnit(amount, currency.decimals).toNumber(),
+        blockNumber: block.height,
+        symbol: currency.symbol,
+        token: currency.address
+      }
+    })
   
-    reply.send(this._result(id, ret.flat()))
+    reply.send(this._result(id, transfers))
   }
 
-  async _parseTx (tx, height) {
+  async _resolveNativeTransfersByBalanceDifferences(tx) {
     const transaction = tx?.transaction
     const meta = tx?.meta
-
-    // ignore failed transactions
-    if (tx?.err || meta?.err || meta?.status?.Ok !== null) return []
-    if (!transaction?.signatures?.[0]) return []
-    if (!meta?.postBalances) return []
-    if (!meta?.preBalances) return []
-
-    // First signature is always the transaction ID
     const hash = transaction.signatures[0]
-    const solTxs = meta.postBalances.map((postBalance, index) => {
+
+    const transfers = meta.postBalances.map((postBalance, index) => {
       const preBalance = meta.preBalances[index]
       if (preBalance === undefined) return null
 
@@ -104,20 +122,66 @@ class Solana extends Generic {
         // from: null,
         to,
         value: diff,
-        blockNumber: height
+        blockNumber: tx?.slot
       }
     }).filter(Boolean)
+    return transfers
+  }
+
+  async _resolveNativeTransfersByInstructionParsing(tx) {
+    const transaction = tx?.transaction
+    const hash = transaction.signatures[0]
+    const transfers = [];
+    (transaction.message.instructions || []).forEach((instruction) => {
+      if (
+        instruction.program === 'system' &&
+        instruction.parsed &&
+        instruction.parsed.type === 'transfer'
+      ) {
+        const { source, destination, lamports } = instruction.parsed.info;
+        if (source && destination) {
+          transfers.push({
+            hash,
+            from: source,
+            to: destination,
+            value: new BN(lamports),
+            blockNumber: tx?.slot
+          });
+        }
+      }
+    });
+    return transfers
+  }
+
+  async _parseTx(tx, height) {
+    const transaction = tx?.transaction
+    const meta = tx?.meta
+
+    // ignore failed transactions
+    if (tx?.err || meta?.err || meta?.status?.Ok !== null) return []
+    if (!transaction?.signatures?.[0]) return []
+    if (!meta?.postBalances) return []
+    if (!meta?.preBalances) return []
+
+    // First signature is always the transaction ID
+    const hash = transaction.signatures[0]
+
+    const NativeTransfersByInstructionParsing = await this._resolveNativeTransfersByInstructionParsing(tx)
+    const NativeTransfersByBalanceDifferences = await this._resolveNativeTransfersByBalanceDifferences(tx)
+    const nativeTransfers = NativeTransfersByInstructionParsing.length !== 0 ? NativeTransfersByInstructionParsing : NativeTransfersByBalanceDifferences
 
     const tokens = this._getTokens()
     if (tokens.size === 0) {
-      return solTxs
+      return nativeTransfers
     }
 
-    const ret = solTxs.concat(this._processTokenBalances(tx, tokens, hash, height))
+    const splTokenTransfers = this._processTokenBalances(tx, tokens, hash, height);
+
+    const ret = nativeTransfers.concat(splTokenTransfers)
     return ret
   }
 
-  _processTokenBalances (tx, tokens, hash, height) {
+  _processTokenBalances(tx, tokens, hash, height) {
     const postTokenBalances = tx?.meta?.postTokenBalances?.filter(({ mint }) => tokens.has(mint)) ?? []
     const preTokenBalances = tx?.meta?.preTokenBalances?.filter(({ mint }) => tokens.has(mint)) ?? []
 
