@@ -277,7 +277,6 @@ class Ankr extends BaseServer {
     let res = this._transfersCache.get({fromBlock, toBlock, address})
        
     if (!res) {
-      const startTime = Date.now()
       res = await this._ankr.getTokenTransfers({
         blockchain: this.chain,
         fromBlock,
