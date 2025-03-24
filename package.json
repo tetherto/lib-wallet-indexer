@@ -9,9 +9,11 @@
     "test:proxy": "brittle ./test/proxy.test.js",
     "test:tron": "brittle ./test/tron.test.js",
     "test:solana": "brittle ./test/solana.test.js",
+    "test:toncenter": "brittle ./test/toncenter.test.js",
     "start-hardhat": "node index.js hardhat",
     "start-ankr": "node index.js ankr",
     "start-tron": "node index.js tron",
+    "start-toncenter": "node index.js toncenter",
     "start-solana": "node index.js solana"
   },
   "author": "rbndg",
@@ -23,9 +25,10 @@
     "@solana/web3.js": "^1.95.4",
     "bignumber.js": "^9.1.2",
     "fastify": "^4.28.0",
+    "tonweb": "^0.0.66",
+    "tronweb": "6.0.0",
     "web3": "^4.10.0",
-    "ws": "^8.18.0",
-    "tronweb": "6.0.0"
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "brittle": "^3.5.2",
