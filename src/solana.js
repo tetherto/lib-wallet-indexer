@@ -17,21 +17,45 @@ const BN = require('bignumber.js')
 const Generic = require('./generic')
 const { Connection, PublicKey } = require('@solana/web3.js')
 const { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddress } = require('@solana/spl-token')
+const { BitqueryClient, BitqueryWebSocket } = require('./bitquery')
 
 const EVENTS = {
   SUB_ACCOUNT: 'subscribeAccount'
 }
 
 class Solana extends Generic {
-  constructor (config = {}) {
+  constructor(config = {}) {
     super(config)
 
+    this.bitquery = new BitqueryClient(config)
+    this.bitqueryWs = new BitqueryWebSocket(config)
     this.client = new Connection(config.solana_api ?? 'https://api.mainnet-beta.solana.com')
   }
 
-  async _getHeight () {
+  /**
+   * Return current height
+   * @returns {Promise<Number>}
+   */
+  async _getHeight() {
     const height = await this.client.getSlot()
     return height
+  }
+
+  /**
+   * @description Convert amount from main to base unit.
+   **/
+  toBaseUnit(amount, decimals) {
+    if (typeof amount !== 'string' && typeof amount !== 'number') {
+      throw new Error('Amount must be a string or number');
+    }
+
+    const baseAmount = new BN(amount).times(new BN(10).pow(decimals));
+
+    if (!baseAmount.isInteger()) {
+      throw new Error(`Conversion results in a non-integer value: ${baseAmount.toString()}`);
+    }
+
+    return baseAmount;
   }
 
   /**
@@ -40,7 +64,6 @@ class Solana extends Generic {
    * @param {Object} req - Request object with query parameters.
    * @param {Object} reply - Reply object for sending the response.
    */
-  
   async _getTransactionsByAddress(req, reply) {
     // TODO: add support for pagination
     const id = req.body.id
@@ -48,9 +71,9 @@ class Solana extends Generic {
     const addr = query.address
     const fromBlock = query.fromBlock
     const toBlock = query.toBlock
-  
+
     let signatures = await this.client.getSignaturesForAddress(new PublicKey(addr), { limit: 1000 })
-  
+
     // Iterate over all associated token accounts for all registered tokens
     for (const token of this._getTokens()) {
       try {
@@ -62,32 +85,37 @@ class Solana extends Generic {
         continue
       }
     }
-  
+
     // Filter signatures by slot range if fromBlock and toBlock are provided
     if (fromBlock !== undefined && toBlock !== undefined) {
       signatures = signatures.filter(sig => sig.slot >= fromBlock && sig.slot <= toBlock)
     }
-  
-    // Fetch and parse transactions
-    const txs = await Promise.all(signatures.map(tx => this.client.getParsedTransaction(tx.signature)))
-    const ret = await Promise.all(txs.map(tx => this._parseTx(tx, tx?.slot)))
-  
-    reply.send(this._result(id, ret.flat()))
+
+    const { asReceiver, asSender } = await this.bitquery.getTransfers([addr], signatures.map(s => s.signature))
+    const transfers = [...asReceiver, ...asSender].map(({ block, transaction, receiver, sender, amount, currency }) => {
+      return {
+        hash: transaction.signature,
+        from: sender.address,
+        to: receiver.address,
+        value: this.toBaseUnit(amount, currency.decimals).toNumber(),
+        blockNumber: block.height,
+        symbol: currency.symbol,
+        token: currency.address
+      }
+    })
+
+    reply.send(this._result(id, transfers))
   }
 
-  async _parseTx (tx, height) {
+  /**
+   * @description Resolve native transfers by sorting balance differences
+   **/
+  async _resolveNativeTransfersByBalanceDifferences(tx) {
     const transaction = tx?.transaction
     const meta = tx?.meta
-
-    // ignore failed transactions
-    if (tx?.err || meta?.err || meta?.status?.Ok !== null) return []
-    if (!transaction?.signatures?.[0]) return []
-    if (!meta?.postBalances) return []
-    if (!meta?.preBalances) return []
-
-    // First signature is always the transaction ID
     const hash = transaction.signatures[0]
-    const solTxs = meta.postBalances.map((postBalance, index) => {
+
+    const transfers = meta.postBalances.map((postBalance, index) => {
       const preBalance = meta.preBalances[index]
       if (preBalance === undefined) return null
 
@@ -104,20 +132,73 @@ class Solana extends Generic {
         // from: null,
         to,
         value: diff,
-        blockNumber: height
+        blockNumber: tx?.slot
       }
     }).filter(Boolean)
+    return transfers
+  }
+
+  /**
+   * @description Resolve native transfers by parsing instruction sets
+   **/
+  async _resolveNativeTransfersByInstructionParsing(tx) {
+    const transaction = tx?.transaction
+    const hash = transaction.signatures[0]
+    const transfers = [];
+    (transaction.message.instructions || []).forEach((instruction) => {
+      if (
+        instruction.program === 'system' &&
+        instruction.parsed &&
+        instruction.parsed.type === 'transfer'
+      ) {
+        const { source, destination, lamports } = instruction.parsed.info;
+        if (source && destination) {
+          transfers.push({
+            hash,
+            from: source,
+            to: destination,
+            value: new BN(lamports),
+            blockNumber: tx?.slot
+          });
+        }
+      }
+    });
+    return transfers
+  }
+
+  /**
+   * @description Parse a transaction
+   **/
+  async _parseTx(tx, height) {
+    const transaction = tx?.transaction
+    const meta = tx?.meta
+
+    // ignore failed transactions
+    if (tx?.err || meta?.err || meta?.status?.Ok !== null) return []
+    if (!transaction?.signatures?.[0]) return []
+    if (!meta?.postBalances) return []
+    if (!meta?.preBalances) return []
+
+    // First signature is always the transaction ID
+    const hash = transaction.signatures[0]
+
+    const nativeTransfers = await this._resolveNativeTransfersByBalanceDifferences(tx)
 
     const tokens = this._getTokens()
     if (tokens.size === 0) {
-      return solTxs
+      return nativeTransfers
     }
 
-    const ret = solTxs.concat(this._processTokenBalances(tx, tokens, hash, height))
+    const splTokenTransfers = this._processTokenBalances(tx, tokens, hash, height);
+
+    const ret = nativeTransfers.concat(splTokenTransfers)
     return ret
   }
 
-  _processTokenBalances (tx, tokens, hash, height) {
+  /**
+   * @description Process token balances
+   **/
+  _processTokenBalances(tx, tokens, hash, height) {
     const postTokenBalances = tx?.meta?.postTokenBalances?.filter(({ mint }) => tokens.has(mint)) ?? []
     const preTokenBalances = tx?.meta?.preTokenBalances?.filter(({ mint }) => tokens.has(mint)) ?? []
 
@@ -191,7 +272,10 @@ class Solana extends Generic {
     return txTransfers.concat(txTransfersChecks)
   }
 
-  async _getAddrSetsForComparison (tx, addr) {
+  /**
+   * @description Get associated token accounts for a given address
+   **/
+  async _getAddrSetsForComparison(tx, addr) {
     try {
       const addresses = [addr]
       if (tx.token) {
@@ -209,7 +293,10 @@ class Solana extends Generic {
     }
   }
 
-  _hasCreateATAInstruction (tx, ataAddress) {
+  /**
+   * @description Has a create account instruction
+   **/
+  _hasCreateATAInstruction(tx, ataAddress) {
     const found = tx?.transaction?.message?.instructions?.find(i => {
       return ASSOCIATED_TOKEN_PROGRAM_ID.equals(i.programId) &&
         i.parsed.info.account === ataAddress &&
@@ -219,7 +306,12 @@ class Solana extends Generic {
     return !!found
   }
 
-  async _getHeightTxs (height) {
+  /**
+   * Return txs for the given height
+   * @param {Number} height
+   * @returns {Promise<any[]>}
+   */
+  async _getHeightTxs(height) {
     const block = await this.client.getBlock(height, {
       maxSupportedTransactionVersion: 0,
       rewards: false
@@ -230,22 +322,92 @@ class Solana extends Generic {
     return ret
   }
 
-  _getTokens () {
+  /**
+   * Return set of tokens currently subscribbed to
+   * @returns {string[]}
+   */
+  _getTokens() {
     const subs = this._getEventSubs(EVENTS.SUB_ACCOUNT)
     const v = subs.flatMap(sub => sub.event.flatMap(([addr, tokens]) => tokens))
     const tokens = new Set(v)
     return tokens
   }
 
-  // Process contract event and send data to client
-  _emitContractEvent (contract, decoded, log) {
-    // TODO: not implemented
-    return
+  /**
+   * @description process contract event and send data to client
+   **/
+  _emitContractEvent(payload) {
+    const subs = this._getEventSubs(EVENTS.SUB_ACCOUNT)
+
+    subs.forEach((sub) => {
+      sub.event.forEach(([addr, tokens]) => {
+        const filteredTransfers = this._filterEventTransfers(payload, [addr], tokens);
+        if (filteredTransfers.length === 0) return
+        const transfers = this._formatEventTransfers(filteredTransfers)
+        console.log("Transfer detected for subbed addresses: ", addr)
+
+        transfers. forEach(t => {
+          sub.send(EVENTS.SUB_ACCOUNT, {
+            addr,
+            token: t.token,
+            tx: {
+              height: t.blockNumber,
+              hash: t.hash,
+              from: t.from,
+              to: t.to,
+              symbol: t.symbol,
+              value: t.value && t.value.toString()
+            }
+          })
+        })
+      })
+    })
   }
 
-  // Listen to token  events, and send message to user when detected relevant tx
-  async _subToContract (contract) {
-    // TODO: not implemented
+  /**
+   * @description Subscribe to address and tokens for a user
+   **/
+  async _wsSubscribeAccount(req) {
+    super._wsSubscribeAccount(req)
+
+    this.bitqueryWs.resubscribeToTranferEvents((transfers => this._emitContractEvent(transfers)), this._contractLogSubs);
+  }
+
+  /**
+   * @description Filter transfers based on the subscribed addresses
+   **/
+  _filterEventTransfers(transfers, subbedAddresses, mintAddresses) {
+    return transfers.filter(({ Transfer }) =>
+      (
+        subbedAddresses.includes(Transfer.Sender.Address) ||
+        subbedAddresses.includes(Transfer.Receiver.Address) ||
+        subbedAddresses.includes(Transfer.Sender.Owner) ||
+        subbedAddresses.includes(Transfer.Receiver.Owner)
+      ) &&
+      mintAddresses.includes(Transfer.Currency.MintAddress)
+    );
+  }
+
+  /**
+   * @description Format transfers into the required output format
+   **/
+  _formatEventTransfers(transfers) {
+    return transfers.map(({ Block, Transaction, Transfer }) => ({
+      hash: Transaction.Signature,
+      from: Transfer.Sender.Address,
+      to: Transfer.Receiver.Address,
+      value: this.toBaseUnit(Transfer.Amount, Transfer.Currency.Decimals),
+      blockNumber: Block.Height,
+      symbol: Transfer.Currency.Symbol,
+      token: Transfer.Currency.MintAddress
+    }))
+  }
+
+  /**
+   * @description Listen to token events, and send message to user when detected relevant tx
+   **/
+  async _subToContract(contract) {
+    this.bitqueryWs.addMintAddresses(contract)
     return
   }
 }

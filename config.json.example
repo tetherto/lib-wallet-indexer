@@ -9,5 +9,8 @@
   "tron_solidity_api": "https://enterprise.onerpc.com/rest/tron",
   "tron_api": "https://enterprise.onerpc.com/rest/tron",
   "tron_api_key": "",
-  "tron_block_read_interval_ms": 2000
+  "tron_block_read_interval_ms": 2000,
+  "solana_api": "https://api.devnet.solana.com",
+  "bitquery_api_key": "<PLACEHOLDER>",
+  "bitquery_auth_token": "<PLACEHOLDER>"
 }
