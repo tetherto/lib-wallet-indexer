@@ -86,7 +86,7 @@ class BitqueryClient {
    */
   async getTransfers(addresses, signatures, instructionType = "transfer", limit = 99999, offset = 0) {
     if (addresses.length === 0) {
-      throw new Error('No addresses passed')
+      throw new Error('Bitquery: No addresses passed')
     }
 
     const query = this.getTransfersQuery(signatures)
@@ -99,19 +99,19 @@ class BitqueryClient {
     try {
       const response = await fetch(this.endpoint, requestOptions)
       if (!response.ok) {
-        throw new Error(`Network error: ${response.status} - ${response.statusText}`)
+        throw new Error(`Bitquery: Network error: ${response.status} - ${response.statusText}`)
       }
 
       const result = await response.json()
 
       if (result.errors) {
         console.error(result.errors)
-        throw new Error("Bad request error")
+        throw new Error("Bitquery: Bad request error")
       }
 
       return result.data.solana
     } catch (error) {
-      console.error("Error fetching transfers:", error)
+      console.error("Bitquery: Error fetching transfers:", error)
       throw error
     }
   }
@@ -168,14 +168,14 @@ class BitqueryWebSocket {
   // Open the websocket connection and setup event listeners
   connect(cb) {
     if (this.mintAddresses.length === 0) {
-      console.log("Connection cancelled, please add mintAddresses")
+      console.log("Bitquery: Connection cancelled, please add mintAddresses")
       return
     }
 
     this.ws = new WebSocket(this.uri, ["graphql-ws"])
 
     this.ws.on("open", () => {
-      console.log("Connected to Bitquery.")
+      console.log("Bitquery: Connected")
       const initMessage = JSON.stringify({ type: "connection_init" })
       this.ws.send(initMessage)
     })
@@ -184,33 +184,33 @@ class BitqueryWebSocket {
       const response = JSON.parse(data)
 
       if (response.type === "connection_ack") {
-        console.log("Connection acknowledged by server.")
+        console.log("Bitquery: Connection acknowledged by server.")
         this.sendSubscription()
       }
 
       if (response.type === "data") {
-        console.log("Received new data")
+        // console.log("Bitquery: Received new data")
         const { Transfers } = response.payload.data.Solana
         cb(Transfers)
       }
 
       if (response.type === "ka") {
-        console.log("Keep-alive message received.")
+        // console.log("Bitquery: Keep-alive message received.")
       }
 
       if (response.type === "error") {
-        console.error("Error message received:", response.payload.errors)
+        console.error("Bitquery: Error message received:", response.payload.errors)
       }
     })
 
     this.ws.on("close", () => {
-      console.log("Disconnected from Bitquery.")
+      console.log("Bitquery: Disconnected")
       this.activeMintAddresses = []
     })
 
     this.ws.on("error", (error) => {
       if (error.message !== 'WebSocket was closed before the connection was established') {
-        console.error("WebSocket Error:", error)
+        console.error("Bitquery: WebSocket Error:", error)
       }
     })
   }
@@ -228,7 +228,7 @@ class BitqueryWebSocket {
       }
     })
     this.ws.send(subscriptionMessage)
-    console.log("Subscription message sent.")
+    console.log("Bitquery: Subscription message sent.")
     this.activeMintAddresses = this.mintAddresses
   }
 
@@ -246,12 +246,12 @@ class BitqueryWebSocket {
       [...oldSet].every(addr => uniqueSet.has(addr))
 
     if (isSame) {
-      // console.log("No changes to mint addresses.")
+      // console.log("Bitquery: No changes to mint addresses.")
       return
     }
 
     this.mintAddresses = updatedMintAddresses
-    // console.log("Updated mint addresses:", this.mintAddresses)
+    // console.log("Bitquery: Updated mint addresses:", this.mintAddresses)
   }
 
   // Close the current websocket connection
@@ -259,7 +259,7 @@ class BitqueryWebSocket {
     if (this.ws) {
       this.ws.close()
       this.activeMintAddresses = []
-      console.log("WebSocket connection closed.")
+      console.log("Bitquery: WebSocket connection closed.")
     }
   }
 
@@ -272,14 +272,14 @@ class BitqueryWebSocket {
       const currentSet = new Set(this.activeMintAddresses);
       const isSame = newSet.size === currentSet.size && [...newSet].every(addr => currentSet.has(addr));
       if (isSame) {
-        console.log("Passed mint addresses are the same as current. Cancelling reconnection.");
+        console.log("Bitquery: Passed mint addresses are the same as current. Cancelling reconnection.");
         return;
       }
     }
 
     this.disconnect()
 
-    console.log("Resubscribing to mint addresses: ", this.mintAddresses)
+    // console.log("Bitquery: Resubscribing to mint addresses: ", this.mintAddresses)
 
     this.connect(cb)
   }
