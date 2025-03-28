@@ -13,9 +13,11 @@
 // limitations under the License.
 
 'use strict'
+const BN = require('bignumber.js')
 const BaseServer = require('./proxy')
 const { Web3, FMT_NUMBER } = require('web3')
 const { AnkrProvider } = require('@ankr.com/ankr.js')
+const Cache = require('./cache')
 
 const EVENTS = {
   SUB_ACCOUNT: 'subscribeAccount'
@@ -39,9 +41,11 @@ class Ankr extends BaseServer {
     }
     this._subs = new Map()
     this._contractLogSubs = []
-    this._MAX_SUB_SIZE = 10000
+    this._MAX_SUB_SIZE = 100
     this._ankr = new AnkrProvider(config.ankr)
+    this._nextId = 1
     this.chain = config.chain
+    this._transfersCache = new Cache()
   }
 
   async start () {
@@ -223,7 +227,7 @@ class Ankr extends BaseServer {
     const eth = this.web3.eth
     const query = req.body.param.pop()
     const id = req.body.id
-    const pageSize = query.pageSize || 101
+    const pageSize = query.pageSize || 100
     const fromBlock = query.fromBlock || 0
     const toBlock = query.toBlock || Number(await eth.getBlockNumber())
     const addr = query.address
@@ -238,7 +242,6 @@ class Ankr extends BaseServer {
         descOrder: true
       })
     } catch (err) {
-      console.log(err)
       return reply.send(this._error(id, 'failed to get tx history'))
     }
     const fmt = res.transactions.map((e) => {
@@ -263,51 +266,41 @@ class Ankr extends BaseServer {
    * Uses Web3.js for blockchain interaction.
    */
   async _getTokenTransfers (req, reply) {
-    const eth = this.web3.eth
-
     const id = req.body.id
     const query = req.body.param.pop()
-    const { fromAddress, toAddress, contractAddress, fromBlock, toBlock } = query
+    const { address, fromBlock, toBlock } = query
+    const contractAddress = query.contractAddress.toLowerCase()
 
-    let logs = [],
-        pageToken
+    let transfers = []
 
-    do {
-      const r = await this._ankr.getLogs({
+    // Ignore contract address
+    let res = this._transfersCache.get({fromBlock, toBlock, address})
+       
+    if (!res) {
+      res = await this._ankr.getTokenTransfers({
         blockchain: this.chain,
-        address: [ contractAddress ],
-        pageSize: 10_000,
-        fromBlock: fromBlock || 0,
-        toBlock: toBlock || await eth.getBlockNumber(),
-        decodeLogs: true,
-        descOrder: true,
-        topics: [
-          TOPIC_SIG,
-          fromAddress ? Web3.utils.padLeft(fromAddress, 64) : null,
-          toAddress ? Web3.utils.padLeft(toAddress, 64) : null
-        ],
-        pageToken
+        fromBlock,
+        toBlock,
+        address: address,
+        pageSize: query.pageSize || 100,
+        descOrder: true
       })
 
-      logs = logs.concat(r.logs)
+      this._transfersCache.set({fromBlock, toBlock, address}, res)
+    }
 
-      pageToken = r.nextPageToken
-    } while (pageToken)
-
-    const transfers = []
-
-    for (const log of logs) {
-      const tx = await this.web3.eth.getTransaction(log.transactionHash)
-
-      transfers.push({
-        txid: log.transactionHash,
-        height: log.blockNumber,
-        from: log.event.inputs[0].valueDecoded.toLowerCase(),
-        to: log.event.inputs[1].valueDecoded.toLowerCase(),
-        gas: Number(tx.gas),
-        gasPrice: Number(tx.gasPrice),
-        value: Number.parseInt(log.event.inputs[2].valueDecoded)
-      })
+    for (const log of res['transfers']) {
+      if (log.contractAddress.toLowerCase() === contractAddress) {
+          transfers.push({
+            txid: log.transactionHash,
+            height: log.blockHeight,
+            from: log.fromAddress,
+            to: log.toAddress,
+            gas: 0,
+            gasPrice: 0,
+            value: BN(log.value).multipliedBy(new BN(10).pow(log.tokenDecimals))
+          })
+      }
     }
 
     reply.send(this._result(id, transfers))
